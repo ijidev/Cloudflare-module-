@@ -1,0 +1,12 @@
+# WHMCS Specific
+/modules/servers/cloudflare/config.php
+/vendor/
+
+# OS/IDEs
+.DS_Store
+.vscode/
+.idea/
+
+# Temp files
+/tmp/
+*.tmp
