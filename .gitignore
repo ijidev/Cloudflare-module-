@@ -1,5 +1,12 @@
-# WHMCS Specific
-/modules/servers/cloudflare/config.php
+# Project References
+project ref/
+brain/
+*.log
+
+# WHMCS Module Gitignore
+vendor/
+node_modules/
+servers/cloudflare/config.php
 /vendor/
 
 # OS/IDEs

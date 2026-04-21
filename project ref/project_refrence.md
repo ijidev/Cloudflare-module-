@@ -1,50 +1,23 @@
 # Cloudflare WHMCS Module Project Reference
 
 ## 1. Project Overview & Optimized Prompt
-**Original Request:** "i want to build a whmcs cloudflare moduel"
-**Optimized Prompt:** "Develop a comprehensive WHMCS provisioning module for Cloudflare supporting three account modes: 
-- **BYOT (Bring Your Own Token)**: Clients provide their own API tokens.
-- **Managed**: A central provider-managed account for all client services.
-- **Dedicated**: Isolated accounts automatically provisioned for each client.
+**Optimized Prompt:** "Develop a comprehensive WHMCS provisioning module for Cloudflare supporting three account modes: BYOT, Managed, and Dedicated. Support configurable fees and an integrated premium UI."
 
-The module must support configurable fees for BYOT and Dedicated modes. v1 features include A, CNAME, MX, and TXT DNS management and automated nameserver switching. Performance-optimized, premium UI integrated with 'skitch mpc' assets."
+## 2. Centralized Documentation Rule
+As per user preferences, all planning, tasks, and walkthroughs are merged into:
+[stitch_project_tracker.md](file:///c:/AI%20Project/cloudflare%20whmcs%20moduel/project%20ref/stitch_project_tracker.md)
 
-## 2. User Preferences & Global Instructions
-- **Centralized Docs:** All walkthroughs, implementation plans, and tasks tracking are merged into this `project_reference.md` file. 
-- **Functionality vs Placeholder:** Implement full functionality instead of dummy text or placeholder UI; ensure all links and buttons are functional and pointed correctly.
-- **Thorough Design Implementation:** Ensure all CSS properties and CDNs are accurately applied.
+## 3. Current Strategic Debate
+We are debating the shift from a **Product-based module** to an **Addon-based module**.
 
-## 3. Implementation Plan
-### Technical Architecture
-- **Server Provisioning Module** (`modules/servers/cloudflare/`):
-    - `cloudflare.php`: Main module file implementing `ConfigOptions`, `CreateAccount`, `Suspend`, `Unsuspend`, etc.
-    - `lib/API.php`: A PHP class wrapper for the Cloudflare API v4 with cache and security settings support.
-    - `templates/clientarea.tpl`: Premium, modern user interface for DNS and Security management.
-- **Account Type Logic**:
-    1. **Managed**: Zone is added to the admin's master Cloudflare account.
-    2. **Dedicated**: A new Cloudflare account is created for the client, and the zone is added there.
-    3. **BYOT**: Client provides their own Cloudflare API Token to manage their zone.
+### Why the Pivot?
+The user suggests an **Addon approach** like a 'DNS Manager' integrated into the core. This allows:
+- **Upselling during checkout**: Shows up like "WHOIS Protection" on the domain checkout page.
+- **Native Experience**: Feels like a feature rather than a separate product.
 
-### Features Implemented
-- **DNS Management**: A, CNAME, MX, TXT records with proxy toggling.
-- **Security & Dev Tools**: One-click Under Attack Mode, Development Mode, and Purge Cache.
-- **Automated DNS Templates**: Pre-populate zones with admin-defined records using variables ({ip}, {domain}) upon provisioning.
-- **Lifecycle Automation**: Suspend/Unsuspend pauses/unpauses the zone. Automated nameserver updates on provisioning.
-
-## 4. Task List & Timeline
-- [x] Initial project setup and prompt optimization
-- [x] Planning multi-tier account support (BYOT, Managed, Dedicated)
-- [x] Implement Cloudflare API v4 Wrapper
-- [x] Implement WHMCS Provisioning Module Logic
-- [x] Implement DNS Management UI
-- [x] Automated Nameserver Switching
-- [x] Dedicated Account Isolation Logic
-- [x] Implement Security & Dev Toggles (Under Attack, Dev Mode)
-- [x] Implement lifecycle hooks (Suspend/Unsuspend)
-- [x] Automated DNS Templates & Variable Support
-- [x] Premium CSS/UX Polishing
-- [x] Verification and Walkthrough
-- [x] GitHub Repository Deployment
+### Risks & Considerations
+- **Technical Hooks**: Server modules are more powerful in WHMCS for automated provisioning. We need to verify if "Dedicated" sub-account creation is as robust in the Addon framework.
+- **Billing**: Addons typically sync their billing to the parent domain.
 
 ---
-*Last updated: 2026-04-19 (Project Completed)*
+*Last updated: 2026-04-21*
