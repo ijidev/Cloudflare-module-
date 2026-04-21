@@ -54,6 +54,14 @@ function cloudflare_activate() {
             });
         }
 
+        // Create Sync Status table
+        if (!Capsule::schema()->hasTable('mod_cloudflare_sync_status')) {
+            Capsule::schema()->create('mod_cloudflare_sync_status', function ($table) {
+                $table->integer('domain_id')->primary();
+                $table->enum('status', ['enabled', 'disabled'])->default('enabled');
+            });
+        }
+
         return [
             'status' => 'success',
             'description' => 'Cloudflare Manager activated successfully. Database tables created.',
@@ -90,6 +98,14 @@ function cloudflare_output($vars) {
             exit;
         }
 
+        if ($action == 'toggle_sync') {
+            $domainId = (int)$_POST['domain_id'];
+            $status = $_POST['status'] == 'enabled' ? 'enabled' : 'disabled';
+            Capsule::table('mod_cloudflare_sync_status')->updateOrInsert(['domain_id' => $domainId], ['status' => $status]);
+            header("Location: $modulelink&action=sync&success=4");
+            exit;
+        }
+
         if ($action == 'add_template') {
             Capsule::table('mod_cloudflare_templates')->insert([
                 'type' => $_POST['type'],
@@ -114,7 +130,7 @@ function cloudflare_output($vars) {
 
     // Render UI
     if (isset($_GET['success'])) {
-        $msgs = [1 => 'Settings saved.', 2 => 'Template record added.', 3 => 'Template record deleted.'];
+        $msgs = [1 => 'Settings saved.', 2 => 'Template record added.', 3 => 'Template record deleted.', 4 => 'Domain sync status updated.'];
         echo '<div class="alert alert-success">' . ($msgs[$_GET['success']] ?? 'Success') . '</div>';
     }
 
@@ -123,17 +139,22 @@ function cloudflare_output($vars) {
         .cf-admin-card { background: #fff; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); padding: 20px; margin-bottom: 20px; border: 1px solid #e0e0e0; }
         .cf-admin-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #eee; }
         .cf-admin-header h3 { margin: 0; color: #2d333a; font-weight: 700; }
+        .cf-tabs { margin-bottom: 20px; border-bottom: 1px solid #dee2e6; }
+        .cf-tabs a { display: inline-block; padding: 10px 20px; text-decoration: none; color: #64748b; font-weight: 600; border-bottom: 3px solid transparent; }
+        .cf-tabs a.active { color: #f38020; border-bottom-color: #f38020; }
         .cf-table-admin { width: 100%; border-collapse: collapse; }
         .cf-table-admin th { background: #f8fafc; padding: 12px; text-align: left; border-bottom: 2px solid #e2e8f0; font-size: 13px; color: #64748b; }
         .cf-table-admin td { padding: 12px; border-bottom: 1px solid #edf2f7; vertical-align: middle; }
         .cf-btn-save { background: #f38020; color: #fff; border: none; padding: 10px 25px; border-radius: 5px; font-weight: 600; cursor: pointer; }
-        .cf-btn-add { background: #0051c3; color: #fff; border: none; padding: 8px 15px; border-radius: 4px; font-size: 13px; }
-        .cf-btn-del { color: #e53e3e; background: none; border: none; font-size: 18px; cursor: pointer; }
-        .cf-input-sm { padding: 5px 10px; border: 1px solid #cbd5e1; border-radius: 4px; width: 100%; }
-        .badge-proxy { background: #fee2e2; color: #b91c1c; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; }
-        .badge-proxy.active { background: #ecfdf5; color: #059669; }
     </style>
 
+    <div class="cf-tabs">
+        <a href="<?=$modulelink?>&action=settings" class="<?=$action=='settings'?'active':''?>">Settings</a>
+        <a href="<?=$modulelink?>&action=templates" class="<?=$action=='templates'?'active':''?>">DNS Templates</a>
+        <a href="<?=$modulelink?>&action=sync" class="<?=$action=='sync'?'active':''?>">Domain Sync Tool</a>
+    </div>
+
+    <?php if ($action == 'settings'): ?>
     <div class="cf-admin-card">
         <div class="cf-admin-header">
             <h3><i class="fa fa-cog"></i> Global Configuration</h3>
@@ -158,7 +179,7 @@ function cloudflare_output($vars) {
             </div>
         </form>
     </div>
-
+    <?php elseif ($action == 'templates'): ?>
     <div class="cf-admin-card">
         <div class="cf-admin-header">
             <h3><i class="fa fa-list"></i> DNS Template Manager</h3>
@@ -174,16 +195,12 @@ function cloudflare_output($vars) {
                 </tr>
             </thead>
             <tbody>
-                {foreach from=$templates item=t}
+                <?php foreach ($templates as $t): ?>
                 <tr>
                     <td><span class="label label-info"><?=$t->type?></span></td>
                     <td><?=$t->name?></td>
                     <td><code><?=$t->content?></code></td>
-                    <td>
-                        <span class="badge-proxy <?=$t->proxied ? 'active' : ''?>">
-                            <?=$t->proxied ? 'ON' : 'OFF'?>
-                        </span>
-                    </td>
+                    <td><span class="badge-proxy <?=$t->proxied?'active':''?>"><?=$t->proxied?'ON':'OFF'?></span></td>
                     <td>
                         <form method="post" action="<?=$modulelink?>&action=delete_template" onsubmit="return confirm('Delete this record?')">
                             <input type="hidden" name="id" value="<?=$t->id?>">
@@ -191,17 +208,10 @@ function cloudflare_output($vars) {
                         </form>
                     </td>
                 </tr>
-                {/foreach}
+                <?php endforeach; ?>
                 <tr style="background: #fbfbfb;">
                     <form method="post" action="<?=$modulelink?>&action=add_template">
-                        <td>
-                            <select name="type" class="cf-input-sm">
-                                <option value="A">A</option>
-                                <option value="CNAME">CNAME</option>
-                                <option value="MX">MX</option>
-                                <option value="TXT">TXT</option>
-                            </select>
-                        </td>
+                        <td><select name="type" class="cf-input-sm"><option value="A">A</option><option value="CNAME">CNAME</option><option value="MX">MX</option><option value="TXT">TXT</option></select></td>
                         <td><input type="text" name="name" class="cf-input-sm" placeholder="@ or subdomain" required></td>
                         <td><input type="text" name="content" class="cf-input-sm" placeholder="e.g. {ip} or {domain}" required></td>
                         <td><input type="checkbox" name="proxied" checked></td>
@@ -210,10 +220,45 @@ function cloudflare_output($vars) {
                 </tr>
             </tbody>
         </table>
-        <div class="alert alert-warning" style="margin-top: 15px; font-size: 12px;">
-            <i class="fa fa-info-circle"></i> Use <code>{ip}</code> for the server IP and <code>{domain}</code> for the client domain. These records will be created automatically for <strong>Free Managed</strong> domains.
-        </div>
     </div>
+    <?php elseif ($action == 'sync'): 
+        $domains = Capsule::table('tbldomains')->orderBy('domain', 'asc')->get();
+        $syncStatuses = Capsule::table('mod_cloudflare_sync_status')->pluck('status', 'domain_id');
+    ?>
+    <div class="cf-admin-card">
+        <div class="cf-admin-header">
+            <h3><i class="fa fa-refresh"></i> Domain Synchronization Tool</h3>
+        </div>
+        <table class="cf-table-admin">
+            <thead>
+                <tr>
+                    <th>Domain</th>
+                    <th>Current Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($domains as $d): 
+                    $status = $syncStatuses[$d->id] ?? 'enabled'; // Default to enabled for active domains unless disabled
+                ?>
+                <tr>
+                    <td><strong><?=$d->domain?></strong></td>
+                    <td><span class="label label-<?=$status=='enabled'?'success':'default'?>"><?=$status?></span></td>
+                    <td>
+                        <form method="post" action="<?=$modulelink?>&action=toggle_sync">
+                            <input type="hidden" name="domain_id" value="<?=$d->id?>">
+                            <input type="hidden" name="status" value="<?=$status=='enabled'?'disabled':'enabled'?>">
+                            <button type="submit" class="btn btn-xs btn-<?=$status=='enabled'?'danger':'success'?>">
+                                <?=$status=='enabled'?'Disable Sync':'Enable Sync'?>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php endif; ?>
     <?php
 }
 
@@ -234,6 +279,12 @@ function cloudflare_clientarea($vars) {
         
         if (!$domainData) return "Domain not found.";
 
+        // Check Sync Status
+        $syncStatus = Capsule::table('mod_cloudflare_sync_status')->where('domain_id', $id)->value('status');
+        if ($syncStatus == 'disabled') {
+            return '<div class="alert alert-warning">Cloudflare management is disabled for this domain by the administrator.</div>';
+        }
+
         $domain = $domainData->domain;
         $zoneId = $api->getZoneId($domain);
 
@@ -249,6 +300,16 @@ function cloudflare_clientarea($vars) {
                 foreach ($templates as $t) {
                     $content = str_replace(['{ip}', '{domain}'], [$serverIp, $domain], $t->content);
                     $api->addDNSRecord($zoneId, $t->type, $t->name, $content, $t->ttl, $t->proxied);
+                }
+
+                // Automatic Nameserver Switching
+                $ns = $response['result']['name_servers'];
+                if (count($ns) >= 2) {
+                    localAPI('DomainUpdateNameservers', [
+                        'domainid' => $id,
+                        'ns1' => $ns[0],
+                        'ns2' => $ns[1],
+                    ]);
                 }
             } catch (\Exception $e) { return '<div class="alert alert-danger">Provisioning Error: '.$e->getMessage().'</div>'; }
         }
@@ -298,7 +359,15 @@ function cloudflare_clientarea($vars) {
     }
 
     // Default: Center Dashboard
-    $domains = Capsule::table('tbldomains')->where('userid', $clientId)->where('status', 'Active')->get();
+    $domains = Capsule::table('tbldomains')
+        ->leftJoin('mod_cloudflare_sync_status', 'tbldomains.id', '=', 'mod_cloudflare_sync_status.domain_id')
+        ->where('tbldomains.userid', $clientId)
+        ->where('tbldomains.status', 'Active')
+        ->where(function($query) {
+            $query->where('mod_cloudflare_sync_status.status', 'enabled')
+                  ->orWhereNull('mod_cloudflare_sync_status.status');
+        })
+        ->get();
     return [
         'pagetitle' => 'Cloudflare Center',
         'templatefile' => 'templates/client/center',
