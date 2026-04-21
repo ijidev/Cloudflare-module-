@@ -36,15 +36,20 @@ If you wish to use **Bring Your Own Token (BYOT)**:
 3. Set Type to **Text Box** and check **Show on Order Form**.
 
 ## 4. Feature Guide
-### Client Area Features
-- **DNS Management**: Add/Delete A, CNAME, MX, and TXT records. Toggle Cloudflare Proxy (Cloud icon).
-- **Security Controls**:
-  - **Under Attack Mode**: Immediate high-level security for DDoS protection.
-  - **Development Mode**: Bypass Cloudflare cache for 3 hours to see site updates instantly.
-- **Cache Management**: "Purge Everything" button to clear all cached files.
-- **Nameservers**: Automatic display of assigned Cloudflare nameservers.
+# Cloudflare WHMCS Core Integration (v2.0)
 
-### Admin Automation
+A premium, industrial-themed Cloudflare management module for WHMCS that integrates directly into the core domain management flow.
+
+## 🚀 Version 2.0 Features
+- **Core System Integration**: No longer a standalone product; ties directly into WHMCS domains.
+- **Domain Sync Tool**: Admin can bulk-select which domains are managed via Cloudflare.
+- **Automated Nameservers**: Provisioned domains automatically switch to Cloudflare edge nameservers.
+- **Tiered Access**: Free "Managed" mode vs. Paid "Pro" mode (BYOT & Dedicated).
+- **Stitch Design System**: High-performance, premium industrial UI.
+
+## 📁 Repository Structure
+- `/v1.0`: Legacy Standalone Server Module.
+- `/v2.0`: Current Core Integration Addon.
 - **Nameserver Switching**: Upon successful provisioning, the module automatically updates the domain's nameservers in WHMCS to match Cloudflare.
 - **Suspension**: Suspending a service in WHMCS will "Pause" the zone in Cloudflare, stopping all proxy services.
 
