@@ -37,6 +37,7 @@ function cloudflare_activate() {
             // Insert default empty settings
             Capsule::table('mod_cloudflare_settings')->insert([
                 ['setting' => 'master_api_token', 'value' => ''],
+                ['setting' => 'master_email', 'value' => ''],
                 ['setting' => 'master_account_id', 'value' => ''],
                 ['setting' => 'pro_addon_id', 'value' => '0'],
             ]);
@@ -89,7 +90,7 @@ function cloudflare_output($vars) {
     // Handle Actions
     if ($_POST) {
         if ($action == 'save_settings') {
-            foreach (['master_api_token', 'master_account_id', 'pro_addon_id'] as $setting) {
+            foreach (['master_api_token', 'master_email', 'master_account_id', 'pro_addon_id'] as $setting) {
                 Capsule::table('mod_cloudflare_settings')
                     ->where('setting', $setting)
                     ->update(['value' => $_POST[$setting]]);
@@ -162,16 +163,22 @@ function cloudflare_output($vars) {
         <form method="post" action="<?=$modulelink?>&action=save_settings">
             <div class="row">
                 <div class="col-md-4">
-                    <label>Master API Token</label>
-                    <input type="password" name="master_api_token" class="form-control" value="<?=$settings['master_api_token']?>" placeholder="Cloudflare API Token">
+                    <label>Master API Token / Global Key</label>
+                    <input type="password" name="master_api_token" class="form-control" value="<?=$settings['master_api_token']?>" placeholder="API Token or Global Key">
+                </div>
+                <div class="col-md-4">
+                    <label>Cloudflare Email (Required for Global Key)</label>
+                    <input type="text" name="master_email" class="form-control" value="<?=$settings['master_email']?>" placeholder="e.g. user@example.com">
                 </div>
                 <div class="col-md-4">
                     <label>Master Account ID</label>
                     <input type="text" name="master_account_id" class="form-control" value="<?=$settings['master_account_id']?>" placeholder="Found in dashboard URL">
                 </div>
+            </div>
+            <div class="row" style="margin-top: 15px;">
                 <div class="col-md-4">
                     <label>Pro Addon ID (Unlocks Paid Tier)</label>
-                    <input type="number" name="pro_addon_id" class="form-control" value="<?=$settings['pro_addon_id']?>" placeholder="WHMCS Addon ID">
+                    <input type="number" name="pro_addon_id" class="form-control" value="<?=$settings['pro_addon_id']?>" placeholder="WHMCS Addon ID or Product ID">
                 </div>
             </div>
             <div style="margin-top: 15px;">
@@ -271,7 +278,7 @@ function cloudflare_clientarea($vars) {
     // Load API helper and settings
     require_once __DIR__ . '/lib/API.php';
     $dbSettings = Capsule::table('mod_cloudflare_settings')->pluck('value', 'setting');
-    $api = new \WHMCS\Module\Addon\Cloudflare\API($dbSettings['master_api_token']);
+    $api = new \WHMCS\Module\Addon\Cloudflare\API($dbSettings['master_api_token'], $dbSettings['master_email']);
 
     if ($action == 'manage') {
         $id = (int)$_REQUEST['id'];

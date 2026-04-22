@@ -25,13 +25,17 @@ class API
         $ch = curl_init();
         $url = $this->apiUrl . $endpoint;
 
-        $headers = [
-            'Authorization: Bearer ' . $this->apiToken,
-            'Content-Type: application/json',
-        ];
-
         if ($this->email) {
-            $headers[] = 'X-Auth-Email: ' . $this->email;
+            $headers = [
+                'X-Auth-Email: ' . $this->email,
+                'X-Auth-Key: ' . $this->apiToken,
+                'Content-Type: application/json',
+            ];
+        } else {
+            $headers = [
+                'Authorization: Bearer ' . $this->apiToken,
+                'Content-Type: application/json',
+            ];
         }
 
         if ($method === 'POST') {
