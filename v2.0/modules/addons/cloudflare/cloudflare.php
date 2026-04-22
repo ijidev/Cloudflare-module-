@@ -3,7 +3,7 @@
  * Cloudflare WHMCS Core Integration Addon
  *
  * @package    WHMCS
- * @author     Antigravity
+ * @author     everestserver.com
  * @copyright  Copyright (c) 2026
  * @license    MIT
  */
@@ -18,7 +18,7 @@ function cloudflare_config() {
     return [
         'name' => 'Cloudflare Manager',
         'description' => 'Integrated Cloudflare management with Managed, BYOT, and Dedicated modes.',
-        'author' => 'Antigravity',
+        'author' => 'everestserver.com',
         'language' => 'english',
         'version' => '2.0',
         'fields' => []
