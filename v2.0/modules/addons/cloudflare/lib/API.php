@@ -123,4 +123,9 @@ class API
     {
         return $this->request("zones/$zoneId/settings");
     }
+
+    public function getZoneDetails($zoneId)
+    {
+        return $this->request("zones/$zoneId");
+    }
 }

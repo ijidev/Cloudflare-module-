@@ -20,4 +20,4 @@ The user suggests an **Addon approach** like a 'DNS Manager' integrated into the
 - **Billing**: Addons typically sync their billing to the parent domain.
 
 ---
-*Last updated: 2026-04-21*
+*Last updated: 2026-04-22*
