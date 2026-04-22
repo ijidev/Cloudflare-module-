@@ -386,14 +386,24 @@ function cloudflare_clientarea($vars) {
         }
 
         // Fetch DNS and Zone Status
-        $zoneDetails = $api->getZoneDetails($zoneId)['result'] ?? [];
+        $zoneDetails = [];
+        $dnsRecords = [];
+        if (!isset($error)) $error = '';
+
+        try {
+            $zoneDetails = $api->getZoneDetails($zoneId)['result'] ?? [];
+            $dnsRecords = $api->getDNSRecords($zoneId)['result'] ?? [];
+        } catch (\Exception $e) {
+            $error = "API Error while fetching domain data. Please check your token permissions (ensure DNS:Edit and Zone:Edit are granted). Details: " . $e->getMessage();
+        }
+
         return [
             'pagetitle' => 'Cloudflare Manager - ' . $domain,
             'templatefile' => 'templates/client/manage',
             'vars' => [
                 'domain' => $domain,
                 'cf_domain_id' => $id,
-                'dnsRecords' => $api->getDNSRecords($zoneId)['result'] ?? [],
+                'dnsRecords' => $dnsRecords,
                 'isPro' => $isPro,
                 'isPaused' => $zoneDetails['paused'] ?? false,
                 'error' => $error,

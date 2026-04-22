@@ -19,6 +19,12 @@
         </div>
     </div>
 
+    {if $error}
+        <div class="cf-alert cf-alert-danger" style="background: #fee2e2; color: #991b1b; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ef4444;">
+            <i class="fa fa-exclamation-triangle"></i> {$error}
+        </div>
+    {/if}
+
     {if !$isPro}
         <div class="cf-promo-banner">
             <div class="cf-promo-content">
