@@ -16,16 +16,17 @@ echo "Email Set: " . (!empty($email) ? 'Yes' : 'No') . "<br><hr>";
 $api = new \WHMCS\Module\Addon\Cloudflare\API($apiToken, $email);
 
 try {
-    echo "<b>Test 1: Fetching Zones (Zone:Read)</b><br>";
-    $response = $api->request('zones');
-    $zoneId = $response['result'][0]['id'] ?? null;
-    $domain = $response['result'][0]['name'] ?? null;
-    echo "<span style='color:green'>SUCCESS: Found Zone '$domain' ($zoneId)</span><br><br>";
+    echo "<b>Test 1: Fetching Zone ID for 'everestserver.com' (Zone:Read)</b><br>";
+    $zoneId = $api->getZoneId('everestserver.com');
     
     if ($zoneId) {
-        echo "<b>Test 2: Fetching DNS Records for $domain (DNS:Read)</b><br>";
-        $dns = $api->request("zones/$zoneId/dns_records");
+        echo "<span style='color:green'>SUCCESS: Found Zone ($zoneId)</span><br><br>";
+        
+        echo "<b>Test 2: Fetching DNS Records (DNS:Read)</b><br>";
+        $dns = $api->getDNSRecords($zoneId);
         echo "<span style='color:green'>SUCCESS: Fetched " . count($dns['result']) . " DNS records.</span><br><br>";
+    } else {
+        echo "<span style='color:orange'>Failed to find Zone ID. The token works but has no access to everestserver.com.</span><br><br>";
     }
 } catch (\Exception $e) {
     echo "<span style='color:red'>FAILED: " . $e->getMessage() . "</span><br>";
