@@ -25,15 +25,18 @@ class API
         $ch = curl_init();
         $url = $this->apiUrl . $endpoint;
 
-        if ($this->email) {
+        $email = trim($this->email);
+        $token = trim($this->apiToken);
+
+        if (!empty($email)) {
             $headers = [
-                'X-Auth-Email: ' . $this->email,
-                'X-Auth-Key: ' . $this->apiToken,
+                'X-Auth-Email: ' . $email,
+                'X-Auth-Key: ' . $token,
                 'Content-Type: application/json',
             ];
         } else {
             $headers = [
-                'Authorization: Bearer ' . $this->apiToken,
+                'Authorization: Bearer ' . $token,
                 'Content-Type: application/json',
             ];
         }
@@ -63,8 +66,15 @@ class API
         $decoded = json_decode($response, true);
 
         if ($httpCode >= 400 || (isset($decoded['success']) && !$decoded['success'])) {
-            $error = isset($decoded['errors'][0]['message']) ? $decoded['errors'][0]['message'] : 'Unknown API Error';
-            throw new \Exception("Cloudflare API Error: " . $error);
+            $errorMsg = isset($decoded['errors'][0]['message']) ? $decoded['errors'][0]['message'] : 'Unknown API Error';
+            $errorCode = isset($decoded['errors'][0]['code']) ? $decoded['errors'][0]['code'] : '';
+            
+            $extra = '';
+            if ($httpCode == 401 || $httpCode == 403 || $errorCode == 10000 || $errorCode == 9109) {
+                $extra = " (Auth Error: If using an API Token, ensure the Email field is EMPTY in settings. If using a Global Key, ensure Email is correct. Also ensure no trailing spaces.)";
+            }
+            
+            throw new \Exception("Cloudflare API Error: " . $errorMsg . " (Code: " . $errorCode . ")" . $extra);
         }
 
         return $decoded;

@@ -1,62 +1,34 @@
-# Cloudflare Multi-Tier WHMCS Module - Documentation
+# Cloudflare Multi-Tier WHMCS Module
 
-## 1. Overview
-This module allows WHMCS administrators to offer Cloudflare services to their clients with three distinct provisioning modes. It includes a premium client area interface for DNS management, security controls, and automatic nameserver switching.
+A premium, industrial-themed Cloudflare management module for WHMCS supporting tiered access and advanced integration.
 
-## 2. Installation
-1. **Download/Clone**: Download the module files from GitHub.
-2. **Upload**: Upload the `modules/servers/cloudflare/` directory to your WHMCS installation at `/path/to/whmcs/modules/servers/`.
-3. **Internal Structure**: Ensure the following structure exists:
-   - `modules/servers/cloudflare/cloudflare.php`
-   - `modules/servers/cloudflare/lib/API.php`
-   - `modules/servers/cloudflare/templates/clientarea.tpl`
+## 📁 Repository Structure
 
-## 3. WHMCS Configuration
-### Step 1: Create the Product
-1. Go to **Setup > Products/Services > Products/Services**.
-2. Create a new product (Type: **Other**).
-3. Under the **Module Settings** tab, select **Cloudflare Multi-Tier** from the module dropdown.
-
-### Step 2: Configure Module Options
-- **Account Mode**: Choose one of:
-  - `managed`: All client zones are added to your central Master Account.
-  - `dedicated`: A new isolated Cloudflare Sub-account is created for the client.
-  - `byot`: Clients must provide their own API Token.
-- **Master API Token**: Your Cloudflare API Token (Global or scoped).
-- **Account ID**: Your Master Cloudflare Account ID (found in your dashboard URL).
-- **DNS Template**: Define records to be automatically created on provisioning.
-  - *Format*: `type|name|content` (one per line).
-  - *Variables*: `{ip}` (server IP), `{domain}` (client domain).
-  - *Example*: `A|@|{ip}`, `CNAME|www|@`, `MX|@|mail.{domain}`.
-
-### Step 3: Custom Fields (For BYOT Mode)
-If you wish to use **Bring Your Own Token (BYOT)**:
-1. Go to the **Custom Fields** tab of the product.
-2. Add a field named `Cloudflare Token`.
-3. Set Type to **Text Box** and check **Show on Order Form**.
-
-## 4. Feature Guide
-# Cloudflare WHMCS Core Integration (v2.0)
-
-A premium, industrial-themed Cloudflare management module for WHMCS that integrates directly into the core domain management flow.
-
-## 🚀 Version 2.0 Features
-- **Core System Integration**: No longer a standalone product; ties directly into WHMCS domains.
+### 🔹 [v2.0 Core Integration (Current)](v2.0/)
+The primary version of the module. This is an **Addon Module** that integrates directly into the core domain management flow.
+- **Core System Integration**: Ties directly into WHMCS domains, no longer a standalone product.
 - **Domain Sync Tool**: Admin can bulk-select which domains are managed via Cloudflare.
 - **Automated Nameservers**: Provisioned domains automatically switch to Cloudflare edge nameservers.
 - **Tiered Access**: Free "Managed" mode vs. Paid "Pro" mode (BYOT & Dedicated).
 - **Stitch Design System**: High-performance, premium industrial UI.
+- [Read v2.0 Documentation](v2.0/v2.0_DOCUMENTATION.md)
 
-## 📁 Repository Structure
-- `/v1.0`: Legacy Standalone Server Module.
-- `/v2.0`: Current Core Integration Addon.
-- **Nameserver Switching**: Upon successful provisioning, the module automatically updates the domain's nameservers in WHMCS to match Cloudflare.
-- **Suspension**: Suspending a service in WHMCS will "Pause" the zone in Cloudflare, stopping all proxy services.
+### 🔹 [v1.0 Standalone Server Module (Legacy)](v1.0/)
+The original version of the module. This is a **Server Module** (Product-based) that handles Cloudflare as a separate standalone product/service instead of an addon. 
+- Allows providing Cloudflare through the WHMCS server module architecture.
+- [Read v1.0 Documentation](v1.0/v1.0_DOCUMENTATION.md)
 
-## 5. Troubleshooting
-- **API Error: "Invalid Token"**: Ensure your Master API Token has permissions to `Zone:Edit` and `Account:Edit`.
-- **DNS records not appearing**: Check the Cloudflare dashboard to see if the zone is "Pending Nameserver Update".
-- **Dedicated mode fails**: Ensure your Cloudflare account has the ability to create Sub-accounts (Standard for most accounts).
+## 🔧 Features Overview (Both Versions)
+
+- **DNS Template System**: Define custom DNS records to be automatically created on provisioning.
+- **Automated Nameserver Switching**: Seamlessly update WHMCS nameservers.
+- **Security Controls**: Direct control over "Under Attack Mode" and Development Mode from WHMCS.
+- **Cache Management**: One-click purge cache capabilities.
+
+## ⚙️ Configuration & Documentation
+
+Please refer to the documentation inside the specific version folder you wish to install.
+For most modern WHMCS setups, **v2.0** is recommended for native integration with domain management.
 
 ---
-*Documentation Version 1.1*
+*Last updated: 2026-04-22*
