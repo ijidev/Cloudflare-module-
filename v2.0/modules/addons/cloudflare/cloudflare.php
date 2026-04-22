@@ -314,10 +314,27 @@ function cloudflare_clientarea($vars) {
             } catch (\Exception $e) { return '<div class="alert alert-danger">Provisioning Error: '.$e->getMessage().'</div>'; }
         }
 
-        // Tier Check
+        // Tier Check (Supports both Product Addons and Standalone Products)
         $isPro = false;
         if ($dbSettings['pro_addon_id'] > 0) {
-            $isPro = Capsule::table('tblhostingaddon')->join('tblhosting', 'tblhosting.id', '=', 'tblhostingaddon.hostingid')->where('tblhosting.userid', $clientId)->where('tblhostingaddon.addonid', $dbSettings['pro_addon_id'])->where('tblhostingaddon.status', 'Active')->exists();
+            $proId = (int)$dbSettings['pro_addon_id'];
+            
+            // Check if it's an active Product Addon
+            $hasAddon = Capsule::table('tblhostingaddon')
+                ->join('tblhosting', 'tblhosting.id', '=', 'tblhostingaddon.hostingid')
+                ->where('tblhosting.userid', $clientId)
+                ->where('tblhostingaddon.addonid', $proId)
+                ->where('tblhostingaddon.status', 'Active')
+                ->exists();
+
+            // Check if it's a standalone Product (Package)
+            $hasProduct = Capsule::table('tblhosting')
+                ->where('userid', $clientId)
+                ->where('packageid', $proId)
+                ->where('status', 'Active')
+                ->exists();
+
+            $isPro = ($hasAddon || $hasProduct);
         }
 
         // Handle Operations
