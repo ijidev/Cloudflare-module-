@@ -309,8 +309,6 @@ function cloudflare_clientarea($vars) {
                     $api->addDNSRecord($zoneId, $t->type, $t->name, $content, $t->ttl, $t->proxied);
                 }
 
-                // Automatic Nameserver Switching
-                $ns = $response['result']['name_servers'];
                 if (count($ns) >= 2) {
                     localAPI('DomainUpdateNameservers', [
                         'domainid' => $id,
@@ -318,7 +316,20 @@ function cloudflare_clientarea($vars) {
                         'ns2' => $ns[1],
                     ]);
                 }
-            } catch (\Exception $e) { return '<div class="alert alert-danger">Provisioning Error: '.$e->getMessage().'</div>'; }
+            } catch (\Exception $e) { 
+                $msg = $e->getMessage();
+                if (strpos($msg, '1061') !== false || strpos(strtolower($msg), 'already exists') !== false) {
+                    return '<div class="alert alert-info">
+                        <h4><i class="fa fa-info-circle"></i> Domain Already on Cloudflare</h4>
+                        <p>This domain is already active in another Cloudflare account. To manage it here, you have two options:</p>
+                        <ul>
+                            <li><strong>Option A (Migration):</strong> Delete the domain from your current Cloudflare account. Then, return here and click Manage again to add it to our system.</li>
+                            <li><strong>Option B (BYOT):</strong> If you have a Pro subscription with us, you can simply enter your <strong>Cloudflare API Token</strong> in the domain settings to manage it directly without migrating.</li>
+                        </ul>
+                    </div>';
+                }
+                return '<div class="alert alert-danger">Provisioning Error: '. $msg .'</div>'; 
+            }
         }
 
         // Tier Check (Supports both Product Addons and Standalone Products)
