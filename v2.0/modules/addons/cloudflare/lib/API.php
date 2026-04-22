@@ -95,6 +95,16 @@ class API
         return $this->request("zones/$zoneId/dns_records/$recordId", [], 'DELETE');
     }
 
+    public function pauseZone($zoneId, $paused = true)
+    {
+        return $this->request("zones/$zoneId", ['paused' => $paused], 'PATCH');
+    }
+
+    public function unpauseZone($zoneId)
+    {
+        return $this->pauseZone($zoneId, false);
+    }
+
     public function purgeCache($zoneId)
     {
         return $this->request("zones/$zoneId/purge_cache", ['purge_everything' => true], 'POST');

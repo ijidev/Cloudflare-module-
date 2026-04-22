@@ -121,6 +121,15 @@
                             </button>
                         </form>
                     </div>
+                    <div class="cf-control-item">
+                        <span>Pause Cloudflare</span>
+                        <form method="post" action="index.php?m=cloudflare&action=manage&id={$cf_domain_id}">
+                            <input type="hidden" name="op" value="togglePause">
+                            <button type="submit" class="cf-toggle {if $isPaused}active{/if}">
+                                <div class="cf-toggle-handle"></div>
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>

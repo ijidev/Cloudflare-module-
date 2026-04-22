@@ -339,12 +339,19 @@ function cloudflare_clientarea($vars) {
                         foreach ($settings as $s) { if ($s['id'] == 'security_level') $current = $s['value']; }
                         $api->updateZoneSetting($zoneId, 'security_level', ($current == 'under_attack' ? 'medium' : 'under_attack'));
                         break;
+                    case 'togglePause':
+                        $details = $api->getZoneDetails($zoneId)['result'];
+                        $isPaused = $details['paused'];
+                        $api->pauseZone($zoneId, !$isPaused);
+                        break;
                 }
                 header("Location: index.php?m=cloudflare&action=manage&id=$id&success=1");
                 exit;
             } catch (\Exception $e) { $error = $e->getMessage(); }
         }
 
+        // Fetch DNS and Zone Status
+        $zoneDetails = $api->getZoneDetails($zoneId)['result'] ?? [];
         return [
             'pagetitle' => 'Cloudflare Manager - ' . $domain,
             'templatefile' => 'templates/client/manage',
@@ -353,6 +360,7 @@ function cloudflare_clientarea($vars) {
                 'cf_domain_id' => $id,
                 'dnsRecords' => $api->getDNSRecords($zoneId)['result'] ?? [],
                 'isPro' => $isPro,
+                'isPaused' => $zoneDetails['paused'] ?? false,
                 'error' => $error,
             ],
         ];
