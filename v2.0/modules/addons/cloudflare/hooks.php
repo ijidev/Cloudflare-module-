@@ -42,13 +42,19 @@ add_hook('ClientAreaSecondarySidebar', 1, function($secondarySidebar) {
         $domainId = $_GET['id'];
         $domain = Capsule::table('tbldomains')->where('id', $domainId)->value('domain');
 
-        if ($domain && !is_null($secondarySidebar->getChild('Domain Details Management'))) {
-            $secondarySidebar->getChild('Domain Details Management')
-                ->addChild('Cloudflare Settings', [
-                    'label' => 'Cloudflare Management',
+        if ($domain) {
+            $secondarySidebar->addChild('Cloudflare Management', [
+                'label' => 'Cloudflare Manager',
+                'icon' => 'fa-cloud',
+                'order' => 10,
+            ]);
+
+            $secondarySidebar->getChild('Cloudflare Management')
+                ->addChild('Manage Domain', [
+                    'label' => 'Manage DNS & Security',
                     'uri' => 'index.php?m=cloudflare&action=manage&id=' . $domainId,
-                    'order' => 50,
-                    'icon' => 'fa-cloud',
+                    'order' => 1,
+                    'icon' => 'fa-cog',
                 ]);
         }
     }

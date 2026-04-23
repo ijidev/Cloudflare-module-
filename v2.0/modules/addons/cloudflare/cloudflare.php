@@ -446,7 +446,7 @@ function cloudflare_clientarea($vars) {
             $isPro = Capsule::table('tblhosting')
                 ->join('tblproducts', 'tblproducts.id', '=', 'tblhosting.packageid')
                 ->where('tblhosting.userid', $clientId)
-                ->where('tblhosting.status', 'Active')
+                ->where('tblhosting.domainstatus', 'Active')
                 ->where('tblproducts.name', 'LIKE', '%Cloudflare Pro%')
                 ->exists() || 
                 Capsule::table('tblhostingaddon')
