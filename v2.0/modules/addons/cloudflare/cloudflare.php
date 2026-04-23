@@ -40,6 +40,7 @@ function cloudflare_activate() {
                 ['setting' => 'master_email', 'value' => ''],
                 ['setting' => 'master_account_id', 'value' => ''],
                 ['setting' => 'pro_addon_id', 'value' => '0'],
+                ['setting' => 'pro_upgrade_url', 'value' => 'cart.php?gid=addons'],
             ]);
         }
 
@@ -55,11 +56,18 @@ function cloudflare_activate() {
             });
         }
 
-        // Create Sync Status table
-        if (!Capsule::schema()->hasTable('mod_cloudflare_sync_status')) {
+        // Update Sync Status table with is_pro column if missing
+        if (Capsule::schema()->hasTable('mod_cloudflare_sync_status')) {
+            if (!Capsule::schema()->hasColumn('mod_cloudflare_sync_status', 'is_pro')) {
+                Capsule::schema()->table('mod_cloudflare_sync_status', function ($table) {
+                    $table->boolean('is_pro')->default(false);
+                });
+            }
+        } else {
             Capsule::schema()->create('mod_cloudflare_sync_status', function ($table) {
                 $table->integer('domain_id')->primary();
                 $table->enum('status', ['enabled', 'disabled'])->default('enabled');
+                $table->boolean('is_pro')->default(false);
             });
         }
 
@@ -90,10 +98,13 @@ function cloudflare_output($vars) {
     // Handle Actions
     if ($_POST) {
         if ($action == 'save_settings') {
-            foreach (['master_api_token', 'master_email', 'master_account_id', 'pro_addon_id'] as $setting) {
-                Capsule::table('mod_cloudflare_settings')
-                    ->where('setting', $setting)
-                    ->update(['value' => $_POST[$setting]]);
+            foreach (['master_api_token', 'master_email', 'master_account_id', 'pro_addon_id', 'pro_upgrade_url'] as $setting) {
+                $exists = Capsule::table('mod_cloudflare_settings')->where('setting', $setting)->count();
+                if ($exists) {
+                    Capsule::table('mod_cloudflare_settings')->where('setting', $setting)->update(['value' => $_POST[$setting]]);
+                } else {
+                    Capsule::table('mod_cloudflare_settings')->insert(['setting' => $setting, 'value' => $_POST[$setting]]);
+                }
             }
             header("Location: $modulelink&success=1");
             exit;
@@ -104,6 +115,14 @@ function cloudflare_output($vars) {
             $status = $_POST['status'] == 'enabled' ? 'enabled' : 'disabled';
             Capsule::table('mod_cloudflare_sync_status')->updateOrInsert(['domain_id' => $domainId], ['status' => $status]);
             header("Location: $modulelink&action=sync&success=4");
+            exit;
+        }
+
+        if ($action == 'toggle_pro') {
+            $domainId = (int)$_POST['domain_id'];
+            $isPro = (int)$_POST['is_pro'];
+            Capsule::table('mod_cloudflare_sync_status')->updateOrInsert(['domain_id' => $domainId], ['is_pro' => $isPro]);
+            header("Location: $modulelink&action=sync&success=1");
             exit;
         }
 
@@ -177,8 +196,12 @@ function cloudflare_output($vars) {
             </div>
             <div class="row" style="margin-top: 15px;">
                 <div class="col-md-4">
-                    <label>Pro Addon ID (Unlocks Paid Tier)</label>
+                    <label>Pro Addon ID (Legacy / Optional)</label>
                     <input type="number" name="pro_addon_id" class="form-control" value="<?=$settings['pro_addon_id']?>" placeholder="WHMCS Addon ID or Product ID">
+                </div>
+                <div class="col-md-8">
+                    <label>Pro Upgrade URL (Checkout / Buy Button Link)</label>
+                    <input type="text" name="pro_upgrade_url" class="form-control" value="<?=$settings['pro_upgrade_url']?>" placeholder="e.g. cart.php?a=add&pid=12">
                 </div>
             </div>
             <div style="margin-top: 15px;">
@@ -240,25 +263,40 @@ function cloudflare_output($vars) {
             <thead>
                 <tr>
                     <th>Domain</th>
-                    <th>Current Status</th>
-                    <th>Action</th>
+                    <th>Sync Status</th>
+                    <th>Pro Tier</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($domains as $d): 
-                    $status = $syncStatuses[$d->id] ?? 'enabled'; // Default to enabled for active domains unless disabled
+                    $syncData = Capsule::table('mod_cloudflare_sync_status')->where('domain_id', $d->id)->first();
+                    $status = $syncData->status ?? 'enabled';
+                    $isPro = $syncData->is_pro ?? false;
                 ?>
                 <tr>
                     <td><strong><?=$d->domain?></strong></td>
                     <td><span class="label label-<?=$status=='enabled'?'success':'default'?>"><?=$status?></span></td>
                     <td>
-                        <form method="post" action="<?=$modulelink?>&action=toggle_sync">
-                            <input type="hidden" name="domain_id" value="<?=$d->id?>">
-                            <input type="hidden" name="status" value="<?=$status=='enabled'?'disabled':'enabled'?>">
-                            <button type="submit" class="btn btn-xs btn-<?=$status=='enabled'?'danger':'success'?>">
-                                <?=$status=='enabled'?'Disable Sync':'Enable Sync'?>
-                            </button>
-                        </form>
+                        <span class="label label-<?=$isPro?'warning':'info'?>"><?=$isPro?'PRO':'FREE'?></span>
+                    </td>
+                    <td>
+                        <div style="display: flex; gap: 5px;">
+                            <form method="post" action="<?=$modulelink?>&action=toggle_sync">
+                                <input type="hidden" name="domain_id" value="<?=$d->id?>">
+                                <input type="hidden" name="status" value="<?=$status=='enabled'?'disabled':'enabled'?>">
+                                <button type="submit" class="btn btn-xs btn-<?=$status=='enabled'?'default':'success'?>">
+                                    <i class="fa fa-refresh"></i> <?=$status=='enabled'?'Disable Sync':'Enable Sync'?>
+                                </button>
+                            </form>
+                            <form method="post" action="<?=$modulelink?>&action=toggle_pro">
+                                <input type="hidden" name="domain_id" value="<?=$d->id?>">
+                                <input type="hidden" name="is_pro" value="<?=$isPro?'0':'1'?>">
+                                <button type="submit" class="btn btn-xs btn-<?=$isPro?'default':'warning'?>">
+                                    <i class="fa fa-star"></i> <?=$isPro?'Revoke Pro':'Grant Pro'?>
+                                </button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -332,20 +370,22 @@ function cloudflare_clientarea($vars) {
             }
         }
 
-        // Tier Check (Supports both Product Addons and Standalone Products)
-        $isPro = false;
-        if ($dbSettings['pro_addon_id'] > 0) {
+        // Tier Check (Core Integrated + Legacy Product Addon fallback)
+        $syncData = Capsule::table('mod_cloudflare_sync_status')->where('domain_id', $id)->first();
+        $isPro = (bool)($syncData->is_pro ?? false);
+
+        if (!$isPro && $dbSettings['pro_addon_id'] > 0) {
             $proId = (int)$dbSettings['pro_addon_id'];
             
             // Check if it's an active Product Addon
             $hasAddon = Capsule::table('tblhostingaddon')
-                ->join('tblhosting', 'tblhosting.id', '=', 'tblhostingaddon.hostingid')
+                ->join('tblhosting', 'tblhostingaddon.hostingid', '=', 'tblhosting.id')
                 ->where('tblhosting.userid', $clientId)
                 ->where('tblhostingaddon.addonid', $proId)
                 ->where('tblhostingaddon.status', 'Active')
                 ->exists();
 
-            // Check if it's a standalone Product (Package)
+            // Check if it's an active Standalone Product
             $hasProduct = Capsule::table('tblhosting')
                 ->where('userid', $clientId)
                 ->where('packageid', $proId)
@@ -354,6 +394,10 @@ function cloudflare_clientarea($vars) {
 
             $isPro = ($hasAddon || $hasProduct);
         }
+
+        $proUpgradeUrl = $dbSettings['pro_upgrade_url'] ?: 'cart.php?gid=addons';
+        // Add dynamic variables to the URL if needed (e.g. domain name)
+        $proUpgradeUrl = str_replace('{domain}', $domain, $proUpgradeUrl);
 
         // Handle Operations
         if ($_POST['op']) {
@@ -407,6 +451,7 @@ function cloudflare_clientarea($vars) {
                 'isPro' => $isPro,
                 'isPaused' => $zoneDetails['paused'] ?? false,
                 'error' => $error,
+                'proUpgradeUrl' => $proUpgradeUrl,
             ],
         ];
     }

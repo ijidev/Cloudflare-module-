@@ -31,7 +31,7 @@
                 <i class="fa fa-star"></i>
                 <span>Upgrade to <strong>Cloudflare Pro</strong> to unlock BYOT and Dedicated Account Isolation!</span>
             </div>
-            <a href="cart.php?gid=addons" class="cf-btn-upgrade">Upgrade Now</a>
+            <a href="{$proUpgradeUrl}" class="cf-btn-upgrade">Upgrade Now</a>
         </div>
     {/if}
 
