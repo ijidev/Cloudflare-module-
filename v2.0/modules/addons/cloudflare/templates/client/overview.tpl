@@ -24,6 +24,52 @@
                 <span class="cf-stat-lab">Account Tier</span>
             </div>
         </div>
+        </div>
+    </div>
+
+    <!-- Educational Landing Section -->
+    <div class="cf-architecture-guide animate-slide-up">
+        <div class="cf-guide-header">
+            <h3>Infrastructure Architecture Guide</h3>
+            <p>Understand the deployment modes available for your domains.</p>
+        </div>
+        <div class="cf-guide-grid">
+            <div class="cf-guide-card">
+                <div class="cf-guide-icon" style="color: #058a5e; background: #d1fae5;"><i class="fa fa-shield"></i></div>
+                <h4>Managed Core</h4>
+                <div class="cf-guide-tags"><span class="cf-tag" style="background: #e2e8f0; color: #475569;">Free / Pro</span></div>
+                <p>Your domains are securely proxied through our enterprise master account. You get high performance and DDoS mitigation without the hassle of managing a Cloudflare account yourself.</p>
+                <ul class="cf-guide-list">
+                    <li><i class="fa fa-check" style="color:#058a5e;"></i> Zero setup required</li>
+                    <li><i class="fa fa-check" style="color:#058a5e;"></i> Managed directly via this portal</li>
+                    <li><i class="fa fa-times" style="color:#dc2626;"></i> No direct login to Cloudflare.com</li>
+                </ul>
+            </div>
+            
+            <div class="cf-guide-card">
+                <div class="cf-guide-icon" style="color: #f38020; background: #ffedd5;"><i class="fa fa-lock"></i></div>
+                <h4>Dedicated Sub-Account</h4>
+                <div class="cf-guide-tags"><span class="cf-tag" style="background: #fef3c7; color: #92400e;">Pro Tier</span></div>
+                <p>We automatically provision a totally isolated Cloudflare account using your WHMCS email. It operates independently while still billing through your hosting invoice.</p>
+                <ul class="cf-guide-list">
+                    <li><i class="fa fa-check" style="color:#058a5e;"></i> Direct login to Cloudflare.com</li>
+                    <li><i class="fa fa-check" style="color:#058a5e;"></i> Isolated security perimeter</li>
+                    <li><i class="fa fa-times" style="color:#dc2626;"></i> Must not have an existing CF account</li>
+                </ul>
+            </div>
+
+            <div class="cf-guide-card">
+                <div class="cf-guide-icon" style="color: #3b82f6; background: #dbeafe;"><i class="fa fa-key"></i></div>
+                <h4>BYOT (Personal Token)</h4>
+                <div class="cf-guide-tags"><span class="cf-tag" style="background: #fef3c7; color: #92400e;">Pro Tier</span></div>
+                <p>Connect an existing Cloudflare account using an API token. You maintain 100% ownership, administrative control, and billing relationship with Cloudflare directly.</p>
+                <ul class="cf-guide-list">
+                    <li><i class="fa fa-check" style="color:#058a5e;"></i> Full administrative control</li>
+                    <li><i class="fa fa-check" style="color:#058a5e;"></i> Use any existing Cloudflare account</li>
+                    <li><i class="fa fa-info-circle" style="color:#ca8a04;"></i> Manual token generation required</li>
+                </ul>
+            </div>
+        </div>
     </div>
 
     <!-- Dynamic Promo / Pro Settings -->
@@ -49,7 +95,7 @@
                     <div class="cf-form-group">
                         <label>Architecture Mode</label>
                         <select name="account_type" class="cf-select-custom" onchange="toggleByot(this.value)">
-                            <option value="managed" {if $accountType == 'managed'}selected{/if}>Managed Core (Recommended)</option>
+                            <option value="managed" {if $accountType == 'managed'}selected{/if}>Managed Core</option>
                             <option value="dedicated" {if $accountType == 'dedicated'}selected{/if}>Dedicated Sub-Account</option>
                             <option value="byot" {if $accountType == 'byot'}selected{/if}>BYOT (Personal Token)</option>
                         </select>
@@ -103,7 +149,7 @@
                                 <span class="cf-status-tag tag-active">Active</span>
                             </td>
                             <td>
-                                <span class="cf-infra-tag">{if $isPro}PRO{else}MANAGED{/if}</span>
+                                <span class="cf-infra-tag">{if $isPro}{$accountType|upper}{else}MANAGED{/if}</span>
                             </td>
                             <td style="text-align: right;">
                                 <a href="index.php?m=cloudflare&action=manage&id={$domain->id}" class="cf-btn-action-manage">
@@ -121,7 +167,43 @@
 <script>
 function toggleByot(val) {
     const section = document.getElementById('byot-section');
-    section.style.display = (val === 'byot' ? 'grid' : 'none');
+    const selectElem = document.querySelector('select[name="account_type"]');
+    
+    if (val === 'dedicated') {
+        Swal.fire({
+            title: 'Setup Dedicated Account',
+            html: `
+                <div style="text-align: left; font-size: 14px;">
+                    <p>You have selected Dedicated Account Isolation.</p>
+                    <p><strong>Important:</strong> If your WHMCS email address is already registered with Cloudflare, we cannot create a new dedicated account for you automatically.</p>
+                    <p style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-left: 3px solid #0051c3;">
+                        If you already have a Cloudflare account, please select <strong>BYOT (Personal Token)</strong> instead. You will need to generate an API token from your Cloudflare profile and paste it here.
+                    </p>
+                </div>
+            `,
+            icon: 'info',
+            showCancelButton: true,
+            confirmButtonColor: '#0051c3',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Proceed with Dedicated',
+            cancelButtonText: 'Switch to BYOT'
+        }).then((result) => {
+            if (result.isDismissed && result.dismiss === Swal.DismissReason.cancel) {
+                // User clicked switch to BYOT
+                selectElem.value = 'byot';
+                section.style.display = 'grid';
+            } else if (!result.isConfirmed) {
+                // User closed popup
+                selectElem.value = 'managed';
+                section.style.display = 'none';
+            } else {
+                // Proceed with dedicated
+                section.style.display = 'none';
+            }
+        });
+    } else {
+        section.style.display = (val === 'byot' ? 'grid' : 'none');
+    }
 }
 
 function handleSettingsUpdate(form) {
@@ -190,6 +272,23 @@ function filterDomains() {
 .cf-stat-lab { font-size: 11px; font-weight: 700; color: var(--cf-text-gray); text-transform: uppercase; margin-top: 4px; }
 .pro-stat.active { background: #fffbeb; border-color: #fef3c7; }
 .pro-stat.active .cf-stat-val { color: #92400e; }
+
+/* Architecture Guide */
+.cf-architecture-guide { margin-bottom: 40px; }
+.cf-guide-header { margin-bottom: 25px; text-align: center; }
+.cf-guide-header h3 { margin: 0 0 5px; font-size: 22px; font-weight: 800; color: var(--cf-dark); }
+.cf-guide-header p { margin: 0; color: var(--cf-text-gray); font-size: 15px; }
+.cf-guide-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.cf-guide-card { background: #fff; padding: 30px; border-radius: 20px; border: 1px solid #e2e8f0; box-shadow: var(--cf-card-shadow); display: flex; flex-direction: column; transition: transform 0.3s ease; }
+.cf-guide-card:hover { transform: translateY(-5px); }
+.cf-guide-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 20px; }
+.cf-guide-card h4 { margin: 0 0 10px; font-size: 18px; font-weight: 800; color: var(--cf-dark); }
+.cf-guide-tags { margin-bottom: 15px; }
+.cf-tag { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.cf-guide-card p { margin: 0 0 20px; color: var(--cf-text-gray); font-size: 14px; line-height: 1.6; flex-grow: 1; }
+.cf-guide-list { list-style: none; padding: 0; margin: 0; border-top: 1px solid #f1f5f9; padding-top: 20px; }
+.cf-guide-list li { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; color: var(--cf-dark); margin-bottom: 10px; font-weight: 500; }
+.cf-guide-list li:last-child { margin-bottom: 0; }
 
 /* Premium Banner */
 .cf-premium-banner { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #fff; padding: 40px; border-radius: 24px; margin-bottom: 40px; display: flex; justify-content: space-between; align-items: center; position: relative; overflow: hidden; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }

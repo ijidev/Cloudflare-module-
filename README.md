@@ -1,36 +1,54 @@
-# Cloudflare Multi-Tier WHMCS Module
+# Cloudflare Enterprise Management Module for WHMCS (v2.0)
 
-A premium, industrial-themed Cloudflare management module for WHMCS supporting tiered access and advanced integration.
+A high-performance, fully integrated Cloudflare provisioning and management module for WHMCS. This module allows you to seamlessly offer Managed Cloudflare protection to your clients, while offering premium "Pro" features like Dedicated Sub-Accounts and BYOT (Bring Your Own Token).
 
-## 📁 Repository Structure
+## Features
 
-### 🔹 [v2.0 Core Integration (Current)](v2.0/)
-The primary version of the module. This is an **Addon Module** that integrates directly into the core domain management flow.
-- **Core System Integration**: Ties directly into WHMCS domains, no longer a standalone product.
-- **Domain Sync Tool**: Admin can bulk-select which domains are managed via Cloudflare.
-- **Client-Level Pro Tier**: Tier status is tied to the Client Account. One "Pro" subscription secures all domains.
-- **Flexible Account Modes**: Supports **Managed** (Admin Account), **Dedicated** (Isolated), and **BYOT** (Client Token).
-- **Migration Guide**: Professional UI walkthrough for migrating domains from existing Cloudflare accounts.
-- **Full DNS Control**: Add, Edit, and Delete DNS records with instant sync.
-- **Automated Nameservers**: Provisioned domains automatically switch to Cloudflare edge nameservers.
-- [Read v2.0 Documentation](v2.0/v2.0_DOCUMENTATION.md)
-
-### 🔹 [v1.0 Standalone Server Module (Legacy)](v1.0/)
-The original version of the module. This is a **Server Module** (Product-based) that handles Cloudflare as a separate standalone product/service instead of an addon. 
-- Allows providing Cloudflare through the WHMCS server module architecture.
-- [Read v1.0 Documentation](v1.0/v1.0_DOCUMENTATION.md)
-
-## 🔧 Features Overview (Both Versions)
-
-- **DNS Template System**: Define custom DNS records to be automatically created on provisioning.
-- **Automated Nameserver Switching**: Seamlessly update WHMCS nameservers.
-- **Security Controls**: Direct control over "Under Attack Mode" and Development Mode from WHMCS.
-- **Cache Management**: One-click purge cache capabilities.
-
-## ⚙️ Configuration & Documentation
-
-Please refer to the documentation inside the specific version folder you wish to install.
-For most modern WHMCS setups, **v2.0** is recommended for native integration with domain management.
+- **Three Architecture Modes:**
+  - **Managed Core:** Domains are proxied through your master account (Free/Included tier).
+  - **Dedicated Sub-Account:** Provisions an isolated Cloudflare account using the client's email via Tenant API (Pro Tier).
+  - **BYOT:** Clients can bring their own personal Cloudflare API tokens (Pro Tier).
+- **Automated Pro Upgrades:** Instantly generates standalone upgrade invoices without needing complex WHMCS product setups.
+- **Client Dashboard:** A beautiful, SweetAlert2-powered dashboard for DNS management, Cache Purging, and Security Mode toggling.
+- **Intelligent Migration:** Detects if a domain is externally managed and guides the client through a step-by-step migration process.
 
 ---
-*Last updated: 2026-04-23*
+
+## Installation Guide
+
+1. **Upload Files:** Upload the `cloudflare` folder to your WHMCS directory: `/modules/addons/cloudflare/`
+2. **Activate Module:** Go to your WHMCS Admin Area -> **System Settings** -> **Addon Modules**. Find "Cloudflare Manager" and click **Activate**.
+3. **Configure Permissions:** Click **Configure** on the module and grant Access Control to "Full Administrator".
+4. **Initial Setup:** Click **Save Changes**.
+
+---
+
+## Admin Setup & Configuration
+
+1. **Access the Module:** Navigate to **Addons -> Cloudflare Manager** in the top WHMCS navigation menu.
+2. **Configure Master API:**
+   - **Master API Token:** Enter your Cloudflare Global API Key or API Token (Requires `Zone:Edit`, `DNS:Edit`, and `Account:Edit` permissions).
+   - **Master Account ID:** Your Cloudflare Enterprise/Partner Account ID.
+   - **Account Email:** The email address associated with your Cloudflare account.
+3. **Save Configuration:** Click "Save Settings". The module will automatically verify your credentials.
+
+*(Note: Pricing and Recurring billing settings are managed directly within this interface. The module automatically generates invoices for clients who click "Upgrade Now" in the client area based on these settings.)*
+
+---
+
+## Client Experience
+
+Clients can access the Cloudflare interface in two ways:
+1. **Domain Management Sidebar:** When viewing a specific domain (`clientarea.php?action=domaindetails`), a new "Cloudflare Management" link appears in the sidebar.
+2. **Primary Navigation:** A centralized "Cloudflare Manager" link is available in the primary "Services" dropdown, allowing clients to manage all their active domains from one unified dashboard.
+
+When a client selects **"Dedicated Sub-Account"**, the module automatically intercepts the request, forces the use of their registered WHMCS email, and attempts to provision the account. If the email is already in use at Cloudflare, it safely redirects them to use the BYOT option instead.
+
+---
+
+## Technical Support
+
+If you encounter a blank page or API error, ensure that:
+1. Your server is running PHP 8.1+
+2. Your WHMCS installation has the required `tblhostingaddons` table intact.
+3. Your Cloudflare API Token has sufficient privileges.

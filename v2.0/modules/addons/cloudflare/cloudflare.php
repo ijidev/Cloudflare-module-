@@ -39,8 +39,8 @@ function cloudflare_activate() {
                 ['setting' => 'master_api_token', 'value' => ''],
                 ['setting' => 'master_email', 'value' => ''],
                 ['setting' => 'master_account_id', 'value' => ''],
-                ['setting' => 'pro_addon_id', 'value' => '0'],
-                ['setting' => 'pro_upgrade_url', 'value' => 'cart.php?gid=addons'],
+                ['setting' => 'pro_price', 'value' => '20.00'],
+                ['setting' => 'pro_billing_cycle', 'value' => 'One Time'],
             ]);
         }
 
@@ -111,7 +111,7 @@ function cloudflare_output($vars) {
     // Handle Actions
     if ($_POST) {
         if ($action == 'save_settings') {
-            foreach (['master_api_token', 'master_email', 'master_account_id', 'pro_addon_id', 'pro_upgrade_url'] as $setting) {
+            foreach (['master_api_token', 'master_email', 'master_account_id', 'pro_price', 'pro_billing_cycle'] as $setting) {
                 $exists = Capsule::table('mod_cloudflare_settings')->where('setting', $setting)->count();
                 if ($exists) {
                     Capsule::table('mod_cloudflare_settings')->where('setting', $setting)->update(['value' => $_POST[$setting]]);
@@ -219,14 +219,22 @@ function cloudflare_output($vars) {
                     <input type="text" name="master_account_id" class="form-control" value="<?=$settings['master_account_id']?>" placeholder="Found in dashboard URL">
                 </div>
             </div>
-            <div class="row" style="margin-top: 15px;">
-                <div class="col-md-4">
-                    <label>Pro Addon ID (Legacy / Optional)</label>
-                    <input type="number" name="pro_addon_id" class="form-control" value="<?=$settings['pro_addon_id']?>" placeholder="WHMCS Addon ID or Product ID">
+            <div class="row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                <div class="col-md-12">
+                    <h4 style="margin-top:0; color:#f38020;"><i class="fa fa-shopping-cart"></i> Standalone Pro Manager</h4>
+                    <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Configure the pricing for the automated Pro Tier upgrade invoice generated when a client clicks "Upgrade Now".</p>
                 </div>
-                <div class="col-md-8">
-                    <label>Pro Upgrade URL (Checkout / Buy Button Link)</label>
-                    <input type="text" name="pro_upgrade_url" class="form-control" value="<?=$settings['pro_upgrade_url']?>" placeholder="e.g. cart.php?a=add&pid=12">
+                <div class="col-md-4">
+                    <label>Pro Upgrade Price</label>
+                    <input type="number" step="0.01" name="pro_price" class="form-control" value="<?=$settings['pro_price']?>" placeholder="e.g. 20.00">
+                </div>
+                <div class="col-md-4">
+                    <label>Billing Cycle Description</label>
+                    <select name="pro_billing_cycle" class="form-control">
+                        <option value="One Time" <?=$settings['pro_billing_cycle']=='One Time'?'selected':''?>>One Time</option>
+                        <option value="Monthly" <?=$settings['pro_billing_cycle']=='Monthly'?'selected':''?>>Monthly</option>
+                        <option value="Annually" <?=$settings['pro_billing_cycle']=='Annually'?'selected':''?>>Annually</option>
+                    </select>
                 </div>
             </div>
             <div style="margin-top: 15px;">
@@ -374,14 +382,17 @@ function cloudflare_clientarea($vars) {
 
     // Standalone Pro Purchase Logic
     if ($action == 'buyPro') {
+        $price = $dbSettings['pro_price'] ?? '20.00';
+        $cycle = $dbSettings['pro_billing_cycle'] ?? 'One Time';
+        
         $results = localAPI('CreateInvoice', [
             'userid' => $clientId,
             'date' => date('Y-m-d'),
             'duedate' => date('Y-m-d'),
             'paymentmethod' => '', // Default
             'sendinvoice' => true,
-            'itemdescription1' => 'Cloudflare Pro Tier Upgrade - Perpetual/Annual',
-            'itemamount1' => '20.00',
+            'itemdescription1' => "Cloudflare Pro Tier Upgrade - {$cycle}",
+            'itemamount1' => $price,
             'itemtaxed1' => false,
         ]);
 
@@ -401,10 +412,32 @@ function cloudflare_clientarea($vars) {
     if ($action == 'updateProSettings') {
         $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
         if ($clientStatus && $clientStatus->is_pro) {
+            
+            $accountType = $_POST['account_type'];
+            $apiToken = $_POST['api_token'];
+            $email = $_POST['email'];
+
+            if ($accountType == 'dedicated') {
+                $client = Capsule::table('tblclients')->where('id', $clientId)->first();
+                $email = $client->email; // Enforce WHMCS Email
+                
+                try {
+                    // Attempt to create/verify the dedicated account via Master API
+                    // If the master token lacks privileges or the email exists, this will throw.
+                    $api->createAccount($client->firstname . ' ' . $client->lastname, $email);
+                    // On success, we don't need a client API token; the master token handles it via tenant access.
+                    $apiToken = ''; 
+                } catch (\Exception $e) {
+                    $errorMsg = urlencode("We could not provision a dedicated account for {$email}. Error: " . $e->getMessage() . " If you already have a Cloudflare account, please select BYOT.");
+                    header("Location: index.php?m=cloudflare&error=" . $errorMsg);
+                    exit;
+                }
+            }
+
             Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->update([
-                'account_type' => $_POST['account_type'],
-                'api_token' => $_POST['api_token'],
-                'email' => $_POST['email']
+                'account_type' => $accountType,
+                'api_token' => $apiToken,
+                'email' => $email
             ]);
         }
         header("Location: index.php?m=cloudflare&success=settings");
@@ -460,7 +493,7 @@ function cloudflare_clientarea($vars) {
         $proUpgradeUrl = str_replace('{domain}', $domain, $proUpgradeUrl);
 
         // Handle Operations
-        if ($_POST['op']) {
+        if (isset($_POST['op']) && $_POST['op']) {
             try {
                 if ($_POST['op'] == 'migrate') {
                     $response = $api->createZone($domain, $dbSettings['master_account_id']);
@@ -511,10 +544,17 @@ function cloudflare_clientarea($vars) {
         $dnsRecords = [];
         if (!isset($error)) $error = '';
 
+        $underAttack = false;
         if (!$needsMigration) {
             try {
                 $zoneDetails = $api->getZoneDetails($zoneId)['result'] ?? [];
                 $dnsRecords = $api->getDNSRecords($zoneId)['result'] ?? [];
+                $settings = $api->getZoneSettings($zoneId)['result'] ?? [];
+                foreach ($settings as $s) {
+                    if ($s['id'] == 'security_level' && $s['value'] == 'under_attack') {
+                        $underAttack = true;
+                    }
+                }
             } catch (\Exception $e) {
                 $error = "API Error while fetching domain data. Please check your token permissions (ensure DNS:Edit and Zone:Edit are granted). Details: " . $e->getMessage();
             }
@@ -532,6 +572,7 @@ function cloudflare_clientarea($vars) {
                 'error' => $error,
                 'proUpgradeUrl' => $proUpgradeUrl,
                 'needsMigration' => $needsMigration,
+                'underAttack' => $underAttack,
             ],
         ];
     }

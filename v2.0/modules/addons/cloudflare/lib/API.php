@@ -85,6 +85,13 @@ class API
         return $decoded;
     }
 
+    public function createAccount($name, $email)
+    {
+        // Requires Tenant API / Partner privileges.
+        $data = ['name' => $name, 'type' => 'standard'];
+        return $this->request('accounts', $data, 'POST');
+    }
+
     public function createZone($domain, $accountId = null)
     {
         $data = ['name' => $domain, 'jump_start' => true];
