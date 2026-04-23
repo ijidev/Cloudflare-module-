@@ -114,6 +114,12 @@ class API
         return $this->request("zones/$zoneId/dns_records/$recordId", [], 'DELETE');
     }
 
+    public function updateDNSRecord($zoneId, $recordId, $type, $name, $content, $ttl = 1, $proxied = true)
+    {
+        $data = ['type' => $type, 'name' => $name, 'content' => $content, 'ttl' => $ttl, 'proxied' => $proxied];
+        return $this->request("zones/$zoneId/dns_records/$recordId", $data, 'PUT');
+    }
+
     public function pauseZone($zoneId, $paused = true)
     {
         return $this->request("zones/$zoneId", ['paused' => $paused], 'PATCH');

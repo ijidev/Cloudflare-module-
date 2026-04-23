@@ -56,18 +56,26 @@ function cloudflare_activate() {
             });
         }
 
-        // Update Sync Status table with is_pro column if missing
-        if (Capsule::schema()->hasTable('mod_cloudflare_sync_status')) {
-            if (!Capsule::schema()->hasColumn('mod_cloudflare_sync_status', 'is_pro')) {
-                Capsule::schema()->table('mod_cloudflare_sync_status', function ($table) {
-                    $table->boolean('is_pro')->default(false);
-                });
-            }
-        } else {
+        // Create Sync Status table (Legacy cleanup if needed)
+        if (!Capsule::schema()->hasTable('mod_cloudflare_sync_status')) {
             Capsule::schema()->create('mod_cloudflare_sync_status', function ($table) {
                 $table->integer('domain_id')->primary();
                 $table->enum('status', ['enabled', 'disabled'])->default('enabled');
+            });
+        } elseif (Capsule::schema()->hasColumn('mod_cloudflare_sync_status', 'is_pro')) {
+            Capsule::schema()->table('mod_cloudflare_sync_status', function ($table) {
+                $table->dropColumn('is_pro');
+            });
+        }
+
+        // Create Client Status table (Pro Tier, BYOT, Account Types)
+        if (!Capsule::schema()->hasTable('mod_cloudflare_client_status')) {
+            Capsule::schema()->create('mod_cloudflare_client_status', function ($table) {
+                $table->integer('client_id')->primary();
                 $table->boolean('is_pro')->default(false);
+                $table->enum('account_type', ['managed', 'dedicated', 'byot'])->default('managed');
+                $table->text('api_token')->nullable();
+                $table->string('email')->nullable();
             });
         }
 
@@ -119,10 +127,21 @@ function cloudflare_output($vars) {
         }
 
         if ($action == 'toggle_pro') {
-            $domainId = (int)$_POST['domain_id'];
+            $clientId = (int)$_POST['client_id'];
             $isPro = (int)$_POST['is_pro'];
-            Capsule::table('mod_cloudflare_sync_status')->updateOrInsert(['domain_id' => $domainId], ['is_pro' => $isPro]);
-            header("Location: $modulelink&action=sync&success=1");
+            Capsule::table('mod_cloudflare_client_status')->updateOrInsert(['client_id' => $clientId], ['is_pro' => $isPro]);
+            header("Location: $modulelink&action=clients&success=1");
+            exit;
+        }
+
+        if ($action == 'update_client_type') {
+            $clientId = (int)$_POST['client_id'];
+            Capsule::table('mod_cloudflare_client_status')->updateOrInsert(['client_id' => $clientId], [
+                'account_type' => $_POST['account_type'],
+                'api_token' => $_POST['api_token'],
+                'email' => $_POST['email']
+            ]);
+            header("Location: $modulelink&action=clients&success=1");
             exit;
         }
 
@@ -171,7 +190,8 @@ function cloudflare_output($vars) {
     <div class="cf-tabs">
         <a href="<?=$modulelink?>&action=settings" class="<?=$action=='settings'?'active':''?>">Settings</a>
         <a href="<?=$modulelink?>&action=templates" class="<?=$action=='templates'?'active':''?>">DNS Templates</a>
-        <a href="<?=$modulelink?>&action=sync" class="<?=$action=='sync'?'active':''?>">Domain Sync Tool</a>
+        <a href="<?=$modulelink?>&action=sync" class="<?=$action=='sync'?'active':''?>">Domain Sync</a>
+        <a href="<?=$modulelink?>&action=clients" class="<?=$action=='clients'?'active':''?>">Client Manager</a>
     </div>
 
     <?php if ($action == 'settings'): ?>
@@ -253,47 +273,76 @@ function cloudflare_output($vars) {
     </div>
     <?php elseif ($action == 'sync'): 
         $domains = Capsule::table('tbldomains')->orderBy('domain', 'asc')->get();
-        $syncStatuses = Capsule::table('mod_cloudflare_sync_status')->pluck('status', 'domain_id');
     ?>
     <div class="cf-admin-card">
         <div class="cf-admin-header">
-            <h3><i class="fa fa-refresh"></i> Domain Synchronization Tool</h3>
+            <h3><i class="fa fa-refresh"></i> Domain Synchronization</h3>
         </div>
         <table class="cf-table-admin">
             <thead>
                 <tr>
                     <th>Domain</th>
                     <th>Sync Status</th>
-                    <th>Pro Tier</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($domains as $d): 
-                    $syncData = Capsule::table('mod_cloudflare_sync_status')->where('domain_id', $d->id)->first();
-                    $status = $syncData->status ?? 'enabled';
-                    $isPro = $syncData->is_pro ?? false;
+                    $status = Capsule::table('mod_cloudflare_sync_status')->where('domain_id', $d->id)->value('status') ?? 'enabled';
                 ?>
                 <tr>
                     <td><strong><?=$d->domain?></strong></td>
                     <td><span class="label label-<?=$status=='enabled'?'success':'default'?>"><?=$status?></span></td>
                     <td>
-                        <span class="label label-<?=$isPro?'warning':'info'?>"><?=$isPro?'PRO':'FREE'?></span>
+                        <form method="post" action="<?=$modulelink?>&action=toggle_sync">
+                            <input type="hidden" name="domain_id" value="<?=$d->id?>">
+                            <input type="hidden" name="status" value="<?=$status=='enabled'?'disabled':'enabled'?>">
+                            <button type="submit" class="btn btn-xs btn-<?=$status=='enabled'?'default':'success'?>">
+                                <i class="fa fa-refresh"></i> <?=$status=='enabled'?'Disable Sync':'Enable Sync'?>
+                            </button>
+                        </form>
                     </td>
+                </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
+
+    <?php elseif ($action == 'clients'): 
+        $clients = Capsule::table('tblclients')->orderBy('firstname', 'asc')->get();
+        $proClients = Capsule::table('mod_cloudflare_client_status')->get()->keyBy('client_id');
+    ?>
+    <div class="cf-admin-card">
+        <div class="cf-admin-header">
+            <h3><i class="fa fa-users"></i> Client Pro Manager</h3>
+        </div>
+        <table class="cf-table-admin">
+            <thead>
+                <tr>
+                    <th>Client Name</th>
+                    <th>Email</th>
+                    <th>Tier</th>
+                    <th>Account Mode</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($clients as $c): 
+                    $isPro = $proClients[$c->id]->is_pro ?? false;
+                    $mode = $proClients[$c->id]->account_type ?? 'managed';
+                ?>
+                <tr>
+                    <td><strong><?=$c->firstname?> <?=$c->lastname?></strong></td>
+                    <td><?=$c->email?></td>
+                    <td><span class="label label-<?=$isPro?'warning':'info'?>"><?=$isPro?'PRO':'FREE'?></span></td>
+                    <td><span class="label label-default"><?=strtoupper($mode)?></span></td>
                     <td>
                         <div style="display: flex; gap: 5px;">
-                            <form method="post" action="<?=$modulelink?>&action=toggle_sync">
-                                <input type="hidden" name="domain_id" value="<?=$d->id?>">
-                                <input type="hidden" name="status" value="<?=$status=='enabled'?'disabled':'enabled'?>">
-                                <button type="submit" class="btn btn-xs btn-<?=$status=='enabled'?'default':'success'?>">
-                                    <i class="fa fa-refresh"></i> <?=$status=='enabled'?'Disable Sync':'Enable Sync'?>
-                                </button>
-                            </form>
                             <form method="post" action="<?=$modulelink?>&action=toggle_pro">
-                                <input type="hidden" name="domain_id" value="<?=$d->id?>">
+                                <input type="hidden" name="client_id" value="<?=$c->id?>">
                                 <input type="hidden" name="is_pro" value="<?=$isPro?'0':'1'?>">
                                 <button type="submit" class="btn btn-xs btn-<?=$isPro?'default':'warning'?>">
-                                    <i class="fa fa-star"></i> <?=$isPro?'Revoke Pro':'Grant Pro'?>
+                                    <?=$isPro?'Revoke Pro':'Grant Pro'?>
                                 </button>
                             </form>
                         </div>
@@ -318,6 +367,19 @@ function cloudflare_clientarea($vars) {
     $dbSettings = Capsule::table('mod_cloudflare_settings')->pluck('value', 'setting');
     $api = new \WHMCS\Module\Addon\Cloudflare\API($dbSettings['master_api_token'], $dbSettings['master_email']);
 
+    if ($action == 'updateProSettings') {
+        $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
+        if ($clientStatus && $clientStatus->is_pro) {
+            Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->update([
+                'account_type' => $_POST['account_type'],
+                'api_token' => $_POST['api_token'],
+                'email' => $_POST['email']
+            ]);
+        }
+        header("Location: index.php?m=cloudflare&success=settings");
+        exit;
+    }
+
     if ($action == 'manage') {
         $id = (int)$_REQUEST['id'];
         $domainData = Capsule::table('tbldomains')->where('id', $id)->where('userid', $clientId)->first();
@@ -341,12 +403,8 @@ function cloudflare_clientarea($vars) {
                 
                 $templates = Capsule::table('mod_cloudflare_templates')->get();
                 $serverIp = Capsule::table('tblhosting')->join('tblservers', 'tblservers.id', '=', 'tblhosting.server')->where('tblhosting.domain', $domain)->value('tblservers.ipaddress');
-
-                foreach ($templates as $t) {
-                    $content = str_replace(['{ip}', '{domain}'], [$serverIp, $domain], $t->content);
-                    $api->addDNSRecord($zoneId, $t->type, $t->name, $content, $t->ttl, $t->proxied);
-                }
-
+                // Set default nameservers to domain in WHMCS
+                $ns = $response['result']['name_servers'] ?? [];
                 if (count($ns) >= 2) {
                     localAPI('DomainUpdateNameservers', [
                         'domainid' => $id,
@@ -354,25 +412,17 @@ function cloudflare_clientarea($vars) {
                         'ns2' => $ns[1],
                     ]);
                 }
+                header("Location: index.php?m=cloudflare&action=manage&id=$id&success=1");
+                exit;
             } catch (\Exception $e) { 
                 $msg = $e->getMessage();
-                if (strpos($msg, '1061') !== false || strpos(strtolower($msg), 'already exists') !== false) {
-                    return '<div class="alert alert-info">
-                        <h4><i class="fa fa-info-circle"></i> Domain Already on Cloudflare</h4>
-                        <p>This domain is already active in another Cloudflare account. To manage it here, you have two options:</p>
-                        <ul>
-                            <li><strong>Option A (Migration):</strong> Delete the domain from your current Cloudflare account. Then, return here and click Manage again to add it to our system.</li>
-                            <li><strong>Option B (BYOT):</strong> If you have a Pro subscription with us, you can simply enter your <strong>Cloudflare API Token</strong> in the domain settings to manage it directly without migrating.</li>
-                        </ul>
-                    </div>';
-                }
-                return '<div class="alert alert-danger">Provisioning Error: '. $msg .'</div>'; 
+                $error = $msg;
             }
         }
 
-        // Tier Check (Core Integrated + Legacy Product Addon fallback)
-        $syncData = Capsule::table('mod_cloudflare_sync_status')->where('domain_id', $id)->first();
-        $isPro = (bool)($syncData->is_pro ?? false);
+        // Tier Check (Core Integrated Client-Level + Legacy Product Addon fallback)
+        $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
+        $isPro = (bool)($clientStatus->is_pro ?? false);
 
         if (!$isPro && $dbSettings['pro_addon_id'] > 0) {
             $proId = (int)$dbSettings['pro_addon_id'];
@@ -406,6 +456,9 @@ function cloudflare_clientarea($vars) {
                     case 'addRecord':
                         $api->addDNSRecord($zoneId, $_POST['type'], $_POST['name'], $_POST['content']);
                         break;
+                    case 'editRecord':
+                        $api->updateDNSRecord($zoneId, $_POST['record_id'], $_POST['type'] ?: 'A', $_POST['name'], $_POST['content']);
+                        break;
                     case 'deleteRecord':
                         $api->deleteDNSRecord($zoneId, $_POST['record_id']);
                         break;
@@ -434,11 +487,13 @@ function cloudflare_clientarea($vars) {
         $dnsRecords = [];
         if (!isset($error)) $error = '';
 
-        try {
-            $zoneDetails = $api->getZoneDetails($zoneId)['result'] ?? [];
-            $dnsRecords = $api->getDNSRecords($zoneId)['result'] ?? [];
-        } catch (\Exception $e) {
-            $error = "API Error while fetching domain data. Please check your token permissions (ensure DNS:Edit and Zone:Edit are granted). Details: " . $e->getMessage();
+        if (!$needsMigration) {
+            try {
+                $zoneDetails = $api->getZoneDetails($zoneId)['result'] ?? [];
+                $dnsRecords = $api->getDNSRecords($zoneId)['result'] ?? [];
+            } catch (\Exception $e) {
+                $error = "API Error while fetching domain data. Please check your token permissions (ensure DNS:Edit and Zone:Edit are granted). Details: " . $e->getMessage();
+            }
         }
 
         return [
@@ -452,23 +507,35 @@ function cloudflare_clientarea($vars) {
                 'isPaused' => $zoneDetails['paused'] ?? false,
                 'error' => $error,
                 'proUpgradeUrl' => $proUpgradeUrl,
+                'needsMigration' => $needsMigration,
             ],
         ];
+    // Overview Page Logic
+    $domains = Capsule::table('tbldomains')->where('userid', $clientId)->get();
+    $totalDomains = count($domains);
+    $managedCount = 0;
+    $syncData = Capsule::table('mod_cloudflare_sync_status')->pluck('status', 'domain_id');
+
+    foreach ($domains as $d) {
+        if (($syncData[$d->id] ?? 'enabled') == 'enabled') $managedCount++;
     }
 
-    // Default: Center Dashboard
-    $domains = Capsule::table('tbldomains')
-        ->leftJoin('mod_cloudflare_sync_status', 'tbldomains.id', '=', 'mod_cloudflare_sync_status.domain_id')
-        ->where('tbldomains.userid', $clientId)
-        ->where('tbldomains.status', 'Active')
-        ->where(function($query) {
-            $query->where('mod_cloudflare_sync_status.status', 'enabled')
-                  ->orWhereNull('mod_cloudflare_sync_status.status');
-        })
-        ->get();
+    $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
+    $isPro = (bool)($clientStatus->is_pro ?? false);
+    $proUpgradeUrl = $dbSettings['pro_upgrade_url'] ?: 'cart.php?gid=addons';
+
     return [
-        'pagetitle' => 'Cloudflare Center',
-        'templatefile' => 'templates/client/center',
-        'vars' => ['domains' => $domains],
+        'pagetitle' => 'Cloudflare Manager Overview',
+        'templatefile' => 'templates/client/overview',
+        'vars' => [
+            'totalDomains' => $totalDomains,
+            'managedCount' => $managedCount,
+            'isPro' => $isPro,
+            'accountType' => $clientStatus->account_type ?? 'managed',
+            'apiToken' => $clientStatus->api_token ?? '',
+            'email' => $clientStatus->email ?? '',
+            'proUpgradeUrl' => $proUpgradeUrl,
+            'domains' => $domains,
+        ],
     ];
 }
