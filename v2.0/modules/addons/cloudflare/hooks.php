@@ -42,7 +42,7 @@ add_hook('ClientAreaSecondarySidebar', 1, function($secondarySidebar) {
         $domainId = $_GET['id'];
         $domain = Capsule::table('tbldomains')->where('id', $domainId)->value('domain');
 
-        if ($domain) {
+        if ($domain && !is_null($secondarySidebar->getChild('Domain Details Management'))) {
             $secondarySidebar->getChild('Domain Details Management')
                 ->addChild('Cloudflare Settings', [
                     'label' => 'Cloudflare Management',
