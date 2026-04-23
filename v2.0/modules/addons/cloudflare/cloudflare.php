@@ -449,9 +449,9 @@ function cloudflare_clientarea($vars) {
                 ->where('tblhosting.domainstatus', 'Active')
                 ->where('tblproducts.name', 'LIKE', '%Cloudflare Pro%')
                 ->exists() || 
-                Capsule::table('tblhostingaddon')
-                ->join('tbladdons', 'tbladdons.id', '=', 'tblhostingaddon.addonid')
-                ->where('tblhostingaddon.status', 'Active')
+                Capsule::table('tblhostingaddons')
+                ->join('tbladdons', 'tbladdons.id', '=', 'tblhostingaddons.addonid')
+                ->where('tblhostingaddons.status', 'Active')
                 ->where('tbladdons.name', 'LIKE', '%Cloudflare Pro%')
                 ->exists();
         }
