@@ -8,7 +8,6 @@ use WHMCS\Database\Capsule;
 add_hook('InvoicePaid', 1, function($vars) {
     $invoiceId = $vars['invoiceid'];
     
-    // Check if invoice contains a "Cloudflare Pro" item
     $items = Capsule::table('tblinvoiceitems')
         ->where('invoiceid', $invoiceId)
         ->get();
@@ -32,16 +31,43 @@ add_hook('InvoicePaid', 1, function($vars) {
     }
 });
 
-add_hook('AddonActivated', 1, function($vars) {
-    // If an addon specifically named Cloudflare Pro is activated
-    $addonId = $vars['addonid'];
-    $userId = Capsule::table('tblhostingaddon')->join('tblhosting', 'tblhostingaddon.hostingid', '=', 'tblhosting.id')->where('tblhostingaddon.id', $addonId)->value('tblhosting.userid');
-    
-    $addonName = Capsule::table('tbladdons')->where('id', $vars['id'])->value('name');
-    if (stripos($addonName, 'Cloudflare Pro') !== false) {
-        Capsule::table('mod_cloudflare_client_status')->updateOrInsert(
-            ['client_id' => $userId],
-            ['is_pro' => 1]
-        );
+/**
+ * Inject Cloudflare link into Domain Management Sidebar
+ */
+add_hook('ClientAreaSecondarySidebar', 1, function($secondarySidebar) {
+    $filename = basename($_SERVER['PHP_SELF']);
+    $action = $_GET['action'];
+
+    if ($filename == 'clientarea.php' && $action == 'domaindetails') {
+        $domainId = $_GET['id'];
+        $domain = Capsule::table('tbldomains')->where('id', $domainId)->value('domain');
+
+        if ($domain) {
+            $secondarySidebar->getChild('Domain Details Management')
+                ->addChild('Cloudflare Settings', [
+                    'label' => 'Cloudflare Management',
+                    'uri' => 'index.php?m=cloudflare&action=manage&id=' . $domainId,
+                    'order' => 50,
+                    'icon' => 'fa-cloud',
+                ]);
+        }
     }
 });
+
+/**
+ * Add Cloudflare Manager to the primary navigation menu
+ */
+add_hook('ClientAreaPrimaryNavbar', 1, function($primaryNavbar) {
+    if (!WHMCS\Session::get('uid')) return;
+
+    $servicesMenu = $primaryNavbar->getChild('Services');
+    if ($servicesMenu) {
+        $servicesMenu->addChild('Cloudflare Manager', [
+            'label' => 'Cloudflare Manager',
+            'uri' => 'index.php?m=cloudflare',
+            'order' => 10,
+            'icon' => 'fa-cloud',
+        ]);
+    }
+});
+

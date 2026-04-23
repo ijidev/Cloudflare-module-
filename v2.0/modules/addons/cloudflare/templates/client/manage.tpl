@@ -55,7 +55,7 @@
                     </button>
                     {if !$isPro}
                         <div class="cf-pro-upsell">
-                            <i class="fa fa-info-circle"></i> Don't want to migrate? <a href="{$proUpgradeUrl}">Upgrade to Pro</a> for BYOT support.
+                            <i class="fa fa-info-circle"></i> Don't want to migrate? <a href="index.php?m=cloudflare&action=buyPro">Upgrade to Pro</a> for BYOT support.
                         </div>
                     {/if}
                 </div>

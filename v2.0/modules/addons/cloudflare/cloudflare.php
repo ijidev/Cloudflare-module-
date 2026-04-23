@@ -372,6 +372,27 @@ function cloudflare_clientarea($vars) {
     $action = $_REQUEST['action'] ?? 'center';
     $clientId = $_SESSION['uid'];
 
+    // Standalone Pro Purchase Logic
+    if ($action == 'buyPro') {
+        $results = localAPI('CreateInvoice', [
+            'userid' => $clientId,
+            'date' => date('Y-m-d'),
+            'duedate' => date('Y-m-d'),
+            'paymentmethod' => '', // Default
+            'sendinvoice' => true,
+            'itemdescription1' => 'Cloudflare Pro Tier Upgrade - Perpetual/Annual',
+            'itemamount1' => '20.00',
+            'itemtaxed1' => false,
+        ]);
+
+        if ($results['result'] == 'success') {
+            header("Location: viewinvoice.php?id=" . $results['invoiceid']);
+            exit;
+        } else {
+            return "Error creating invoice: " . $results['message'];
+        }
+    }
+
     // Load API helper and settings
     require_once __DIR__ . '/lib/API.php';
     $dbSettings = Capsule::table('mod_cloudflare_settings')->pluck('value', 'setting');

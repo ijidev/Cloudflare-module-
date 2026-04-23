@@ -35,7 +35,7 @@
                 <p>BYOT support, Dedicated Account Isolation, and advanced DDoS mitigation are just one click away.</p>
             </div>
             <div class="cf-premium-cta">
-                <a href="{$proUpgradeUrl}" class="cf-btn-premium">Upgrade Now <i class="fa fa-arrow-right"></i></a>
+                <a href="index.php?m=cloudflare&action=buyPro" class="cf-btn-premium">Upgrade Now <i class="fa fa-arrow-right"></i></a>
             </div>
         </div>
     {else}
