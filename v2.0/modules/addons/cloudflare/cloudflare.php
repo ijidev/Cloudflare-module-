@@ -510,6 +510,8 @@ function cloudflare_clientarea($vars) {
                 'needsMigration' => $needsMigration,
             ],
         ];
+    }
+    
     // Overview Page Logic
     $domains = Capsule::table('tbldomains')->where('userid', $clientId)->get();
     $totalDomains = count($domains);
