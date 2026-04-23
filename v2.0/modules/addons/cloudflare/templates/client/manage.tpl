@@ -1,68 +1,61 @@
+<!-- Load External Assets -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
 <div class="cf-container">
     <div class="cf-header">
         <div class="cf-title">
-            <img src="https://www.cloudflare.com/img/logo-cloudflare-dark.svg" alt="Cloudflare" style="height: 24px;">
-            <span>Manager: {$domain}</span>
+            <img src="https://www.cloudflare.com/img/logo-cloudflare-dark.svg" alt="Cloudflare" style="height: 28px;">
+            <span>Manager: <span class="cf-domain-name">{$domain}</span></span>
         </div>
         <div class="cf-badge-container">
             <span class="cf-badge {if $isPro}cf-badge-pro{else}cf-badge-managed{/if}">
-                {if $isPro}PRO TIER{else}CORE MANAGED{/if}
+                {if $isPro}<i class="fa fa-star"></i> PRO TIER{else}<i class="fa fa-shield"></i> CORE MANAGED{/if}
             </span>
-            <form method="post" action="index.php?m=cloudflare&action=manage&id={$cf_domain_id}" style="display:inline;">
-                <input type="hidden" name="op" value="purgeCache">
-                <button type="submit" class="cf-btn-cache" title="Purge Everything">
-                    <i class="fa fa-bolt"></i> Purge Cache
-                </button>
-            </form>
+            <button onclick="handleOp('purgeCache')" class="cf-btn-cache" title="Purge Everything">
+                <i class="fa fa-bolt"></i> Purge Cache
+            </button>
         </div>
     </div>
 
-    {if $error}
-        <div class="cf-alert cf-alert-danger" style="background: #fee2e2; color: #991b1b; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ef4444;">
-            <i class="fa fa-exclamation-triangle"></i> {$error}
-        </div>
-    {/if}
-
     {if $needsMigration}
         <div class="cf-migration-overlay">
-            <div class="cf-migration-card">
+            <div class="cf-migration-card animate-pop">
                 <div class="cf-migration-header">
-                    <h3><i class="fa fa-exchange"></i> Domain Migration Required</h3>
-                    <p>This domain is not yet managed by our Cloudflare infrastructure.</p>
+                    <div class="cf-icon-pulse"><i class="fa fa-exchange"></i></div>
+                    <h3>Migration Required</h3>
+                    <p>This domain is currently managed externally. Follow the steps below to migrate it to your premium dashboard.</p>
                 </div>
                 <div class="cf-migration-body">
                     <div class="cf-step">
                         <div class="cf-step-num">1</div>
                         <div class="cf-step-text">
-                            <strong>Remove from Existing Account</strong>
-                            <p>Log in to your current Cloudflare account and remove <strong>{$domain}</strong> from the dashboard.</p>
+                            <strong>Remove from External Cloudflare</strong>
+                            <p>Log in to your current account and remove <strong>{$domain}</strong>. This frees the domain for our infrastructure.</p>
                         </div>
                     </div>
                     <div class="cf-step">
                         <div class="cf-step-num">2</div>
                         <div class="cf-step-text">
-                            <strong>Wait for Propagation</strong>
-                            <p>Wait about 2-5 minutes for Cloudflare to release the domain from their global edge.</p>
+                            <strong>Wait 2-3 Minutes</strong>
+                            <p>Wait for Cloudflare to update its global edge records. This ensures a seamless transition.</p>
                         </div>
                     </div>
                     <div class="cf-step">
                         <div class="cf-step-num">3</div>
                         <div class="cf-step-text">
-                            <strong>Migrate to Our Account</strong>
-                            <p>Click the button below to add the domain to our system and automatically configure nameservers.</p>
+                            <strong>Initialize Managed Setup</strong>
+                            <p>Click below to provision your zone on our high-performance infrastructure.</p>
                         </div>
                     </div>
                 </div>
                 <div class="cf-migration-footer">
-                    <form method="post" action="index.php?m=cloudflare&action=manage&id={$cf_domain_id}">
-                        <input type="hidden" name="op" value="migrate">
-                        <button type="submit" class="cf-btn-migrate-action"><i class="fa fa-rocket"></i> Begin Migration</button>
-                    </form>
+                    <button onclick="handleOp('migrate')" class="cf-btn-migrate-action">
+                        <i class="fa fa-rocket"></i> Begin Migration
+                    </button>
                     {if !$isPro}
-                        <div style="margin-top: 15px; font-size: 13px; color: #64748b;">
-                            Don't want to migrate? <a href="{$proUpgradeUrl}" style="color: #f38020; font-weight: 600;">Upgrade to Pro</a> to use your own Cloudflare account (BYOT).
+                        <div class="cf-pro-upsell">
+                            <i class="fa fa-info-circle"></i> Don't want to migrate? <a href="{$proUpgradeUrl}">Upgrade to Pro</a> for BYOT support.
                         </div>
                     {/if}
                 </div>
@@ -70,10 +63,12 @@
         </div>
     {else}
         <div class="cf-grid">
-            <div class="cf-card cf-dns-card">
+            <div class="cf-card-main">
                 <div class="cf-card-header">
                     <h4><i class="fa fa-list"></i> DNS Records</h4>
-                    <button class="cf-btn-refresh" onclick="window.location.reload()"><i class="fa fa-refresh"></i></button>
+                    <div class="cf-header-actions">
+                        <button class="cf-btn-refresh" onclick="window.location.reload()"><i class="fa fa-refresh"></i></button>
+                    </div>
                 </div>
                 <div class="cf-table-wrapper">
                     <table class="cf-table">
@@ -83,46 +78,44 @@
                                 <th>Name</th>
                                 <th>Content</th>
                                 <th>Proxy</th>
-                                <th style="width: 80px;"></th>
+                                <th style="width: 100px; text-align: right;">Action</th>
                             </tr>
                         </thead>
                         <tbody>
                             {foreach from=$dnsRecords item=record}
-                                <tr>
+                                <tr id="row-{$record.id}">
                                     <td><span class="cf-label-type">{$record.type}</span></td>
-                                    <td class="cf-name-cell">{$record.name}</td>
-                                    <td class="cf-content-cell">{$record.content|truncate:40:"..."}</td>
+                                    <td><span class="cf-text-bold">{$record.name}</span></td>
+                                    <td><span class="cf-text-muted" title="{$record.content}">{$record.content|truncate:35:"..."}</span></td>
                                     <td>
-                                        <div class="cf-proxy-indicator {if $record.proxied}active{/if}">
+                                        <div class="cf-proxy-indicator {if $record.proxied}active{/if}" title="{if $record.proxied}Proxied{else}DNS Only{/if}">
                                             <i class="fa fa-cloud"></i>
                                         </div>
                                     </td>
-                                    <td>
+                                    <td style="text-align: right;">
                                         <div class="cf-row-actions">
-                                            <button class="cf-btn-icon-edit" onclick="toggleEdit('{$record.id}')" title="Edit">
+                                            <button class="cf-btn-icon-edit" onclick="toggleEdit('{$record.id}')">
                                                 <i class="fa fa-pencil"></i>
                                             </button>
-                                            <form method="post" action="index.php?m=cloudflare&action=manage&id={$cf_domain_id}" style="display:inline;">
-                                                <input type="hidden" name="op" value="deleteRecord">
-                                                <input type="hidden" name="record_id" value="{$record.id}">
-                                                <button type="submit" class="cf-btn-icon-delete" onclick="return confirm('Delete this record?')" title="Delete">
-                                                    <i class="fa fa-trash"></i>
-                                                </button>
-                                            </form>
+                                            <button class="cf-btn-icon-delete" onclick="handleDelete('{$record.id}')">
+                                                <i class="fa fa-trash"></i>
+                                            </button>
                                         </div>
                                     </td>
                                 </tr>
-                                <tr id="edit-row-{$record.id}" style="display:none; background: #f8fafc;">
+                                <tr id="edit-row-{$record.id}" class="cf-edit-row" style="display:none;">
                                     <td colspan="5">
-                                        <form method="post" action="index.php?m=cloudflare&action=manage&id={$cf_domain_id}" class="cf-edit-form">
+                                        <form method="post" onsubmit="return handleFormSubmit(this)">
                                             <input type="hidden" name="op" value="editRecord">
                                             <input type="hidden" name="record_id" value="{$record.id}">
-                                            <div class="cf-edit-grid">
-                                                <input type="text" name="name" value="{$record.name}" class="cf-input-sm">
-                                                <input type="text" name="content" value="{$record.content}" class="cf-input-sm">
-                                                <div class="cf-edit-actions">
-                                                    <button type="submit" class="cf-btn-save-sm">Save</button>
-                                                    <button type="button" class="cf-btn-cancel-sm" onclick="toggleEdit('{$record.id}')">Cancel</button>
+                                            <div class="cf-edit-container">
+                                                <div class="cf-edit-fields">
+                                                    <input type="text" name="name" value="{$record.name}" class="cf-input-inline" placeholder="Name">
+                                                    <input type="text" name="content" value="{$record.content}" class="cf-input-inline" placeholder="Content">
+                                                </div>
+                                                <div class="cf-edit-btns">
+                                                    <button type="submit" class="cf-btn-save-inline">Update</button>
+                                                    <button type="button" class="cf-btn-cancel-inline" onclick="toggleEdit('{$record.id}')">Cancel</button>
                                                 </div>
                                             </div>
                                         </form>
@@ -135,52 +128,46 @@
             </div>
 
             <div class="cf-sidebar">
-                <div class="cf-card">
+                <div class="cf-card-side">
                     <div class="cf-card-header">
-                        <h4><i class="fa fa-plus-circle"></i> Add Record</h4>
+                        <h4><i class="fa fa-plus-circle"></i> Quick Add</h4>
                     </div>
-                    <form method="post" action="index.php?m=cloudflare&action=manage&id={$cf_domain_id}" class="cf-form">
+                    <form method="post" onsubmit="return handleFormSubmit(this)" class="cf-form-side">
                         <input type="hidden" name="op" value="addRecord">
-                        <div class="cf-form-group">
-                            <select name="type" class="cf-input" required>
-                                <option value="A">A</option>
-                                <option value="CNAME">CNAME</option>
-                                <option value="MX">MX</option>
-                                <option value="TXT">TXT</option>
-                            </select>
-                        </div>
-                        <div class="cf-form-group">
-                            <input type="text" name="name" class="cf-input" placeholder="Name (@/sub)" required>
-                        </div>
-                        <div class="cf-form-group">
-                            <input type="text" name="content" class="cf-input" placeholder="Content" required>
-                        </div>
-                        <button type="submit" class="cf-btn-primary">Add Record</button>
+                        <select name="type" class="cf-select-side">
+                            <option value="A">A Record</option>
+                            <option value="CNAME">CNAME Record</option>
+                            <option value="MX">MX Record</option>
+                            <option value="TXT">TXT Record</option>
+                        </select>
+                        <input type="text" name="name" class="cf-input-side" placeholder="Name (@/www)">
+                        <input type="text" name="content" class="cf-input-side" placeholder="Content/Value">
+                        <button type="submit" class="cf-btn-add-side">Add Record</button>
                     </form>
                 </div>
 
-                <div class="cf-card">
+                <div class="cf-card-side">
                     <div class="cf-card-header">
-                        <h4><i class="fa fa-shield"></i> Quick Toggles</h4>
+                        <h4><i class="fa fa-shield"></i> Security Toggles</h4>
                     </div>
-                    <div class="cf-controls-list">
-                        <div class="cf-control-item">
-                            <span>Under Attack Mode</span>
-                            <form method="post" action="index.php?m=cloudflare&action=manage&id={$cf_domain_id}">
-                                <input type="hidden" name="op" value="toggleSecurity">
-                                <button type="submit" class="cf-toggle {if $underAttack}active{/if}">
-                                    <div class="cf-toggle-handle"></div>
-                                </button>
-                            </form>
+                    <div class="cf-toggles-list">
+                        <div class="cf-toggle-item">
+                            <div class="cf-toggle-label">
+                                <strong>Under Attack</strong>
+                                <span>High protection</span>
+                            </div>
+                            <button onclick="handleOp('toggleSecurity')" class="cf-toggle-btn {if $underAttack}active{/if}">
+                                <div class="cf-toggle-knob"></div>
+                            </button>
                         </div>
-                        <div class="cf-control-item">
-                            <span>Pause Cloudflare</span>
-                            <form method="post" action="index.php?m=cloudflare&action=manage&id={$cf_domain_id}">
-                                <input type="hidden" name="op" value="togglePause">
-                                <button type="submit" class="cf-toggle {if $isPaused}active{/if}">
-                                    <div class="cf-toggle-handle"></div>
-                                </button>
-                            </form>
+                        <div class="cf-toggle-item">
+                            <div class="cf-toggle-label">
+                                <strong>Proxy Status</strong>
+                                <span>Pause/Resume</span>
+                            </div>
+                            <button onclick="handleOp('togglePause')" class="cf-toggle-btn {if $isPaused}active{/if}">
+                                <div class="cf-toggle-knob"></div>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -191,66 +178,164 @@
 
 <script>
 function toggleEdit(id) {
-    var row = document.getElementById('edit-row-' + id);
-    if (row.style.display === 'none') {
-        row.style.display = 'table-row';
-    } else {
-        row.style.display = 'none';
-    }
+    const row = document.getElementById('edit-row-' + id);
+    row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
 }
+
+function handleOp(op) {
+    const swalConfig = {
+        title: 'Processing...',
+        text: 'Communicating with Cloudflare API',
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); }
+    };
+
+    if (op === 'purgeCache') {
+        swalConfig.title = 'Purging Cache...';
+    } else if (op === 'migrate') {
+        swalConfig.title = 'Initializing Migration...';
+    }
+
+    Swal.fire(swalConfig);
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.innerHTML = `<input type="hidden" name="op" value="${op}">`;
+    document.body.appendChild(form);
+    form.submit();
+}
+
+function handleDelete(id) {
+    Swal.fire({
+        title: 'Delete Record?',
+        text: "This action cannot be undone on Cloudflare.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, delete it!'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.innerHTML = `<input type="hidden" name="op" value="deleteRecord"><input type="hidden" name="record_id" value="${id}">`;
+            document.body.appendChild(form);
+            form.submit();
+        }
+    });
+}
+
+function handleFormSubmit(form) {
+    Swal.fire({
+        title: 'Updating...',
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); }
+    });
+    return true;
+}
+
+// Handle Success/Error Notifications
+{if $smarty.get.success}
+    Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        text: 'Action completed successfully.',
+        timer: 2000,
+        showConfirmButton: false
+    });
+{/if}
+
+{if $error}
+    Swal.fire({
+        icon: 'error',
+        title: 'API Error',
+        text: '{$error|escape:"javascript"}',
+        confirmButtonColor: '#f38020'
+    });
+{/if}
 </script>
 
 <style>
 :root {
     --cf-orange: #f38020;
+    --cf-orange-dark: #d97706;
     --cf-blue: #0051c3;
     --cf-green: #058a5e;
-    --cf-dark: #1e293b;
+    --cf-dark: #0f172a;
+    --cf-gray: #64748b;
     --cf-border: #e2e8f0;
+    --cf-bg: #f8fafc;
 }
-.cf-container { font-family: 'Inter', sans-serif; color: var(--cf-dark); background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 4px 25px rgba(0,0,0,0.05); }
-.cf-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--cf-border); padding-bottom: 15px; }
-.cf-title { display: flex; align-items: center; gap: 12px; font-size: 18px; font-weight: 700; }
-.cf-badge { padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; }
-.cf-badge-managed { background: #f1f5f9; color: #64748b; }
-.cf-badge-pro { background: #fef3c7; color: #92400e; }
 
-/* Migration Styles */
-.cf-migration-overlay { padding: 40px 0; text-align: center; }
-.cf-migration-card { max-width: 600px; margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 40px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
-.cf-migration-header h3 { margin: 0 0 10px 0; font-size: 22px; font-weight: 700; }
-.cf-migration-header p { color: #64748b; margin-bottom: 30px; }
-.cf-migration-body { text-align: left; margin-bottom: 30px; }
-.cf-step { display: flex; gap: 20px; margin-bottom: 20px; align-items: flex-start; }
-.cf-step-num { background: #f1f5f9; color: #475569; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
-.cf-step-text strong { display: block; margin-bottom: 4px; color: #1e293b; }
-.cf-step-text p { margin: 0; font-size: 13px; color: #64748b; }
-.cf-btn-migrate-action { background: var(--cf-orange); color: white; border: none; padding: 12px 30px; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 16px; transition: all 0.2s; }
-.cf-btn-migrate-action:hover { background: #fa6200; transform: translateY(-1px); }
+.cf-container { font-family: 'Inter', sans-serif; color: var(--cf-dark); }
+.cf-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 1px solid var(--cf-border); padding-bottom: 20px; }
+.cf-title { display: flex; align-items: center; gap: 15px; font-size: 22px; font-weight: 700; }
+.cf-domain-name { color: var(--cf-orange); }
 
-/* DNS & Row Actions */
-.cf-row-actions { display: flex; gap: 10px; align-items: center; }
-.cf-btn-icon-edit { background: none; border: none; color: #64748b; cursor: pointer; padding: 5px; border-radius: 4px; transition: all 0.2s; }
-.cf-btn-icon-edit:hover { background: #f1f5f9; color: #0051c3; }
-.cf-btn-icon-delete { background: none; border: none; color: #ef4444; cursor: pointer; padding: 5px; border-radius: 4px; transition: all 0.2s; opacity: 0.7; }
-.cf-btn-icon-delete:hover { background: #fee2e2; opacity: 1; }
+.cf-badge { padding: 6px 14px; border-radius: 30px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+.cf-badge-managed { background: #f1f5f9; color: #475569; }
+.cf-badge-pro { background: #fffbeb; color: #92400e; border: 1px solid #fef3c7; }
 
-.cf-edit-grid { display: grid; grid-template-columns: 1fr 1fr 150px; gap: 10px; padding: 10px; }
-.cf-input-sm { width: 100%; padding: 6px 10px; border: 1px solid var(--cf-border); border-radius: 4px; font-size: 13px; }
-.cf-btn-save-sm { background: #058a5e; color: white; border: none; padding: 5px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; }
-.cf-btn-cancel-sm { background: #e2e8f0; color: #475569; border: none; padding: 5px 12px; border-radius: 4px; font-weight: 600; cursor: pointer; }
+.cf-btn-cache { background: #fff; border: 1px solid var(--cf-border); padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+.cf-btn-cache:hover { background: #f1f5f9; border-color: var(--cf-orange); color: var(--cf-orange); }
 
-.cf-grid { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
-.cf-card { border: 1px solid var(--cf-border); border-radius: 10px; overflow: hidden; margin-bottom: 20px; }
-.cf-card-header { background: #f8fafc; padding: 12px 16px; border-bottom: 1px solid var(--cf-border); display: flex; justify-content: space-between; align-items: center; }
-.cf-card-header h4 { margin: 0; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.cf-grid { display: grid; grid-template-columns: 1fr 300px; gap: 30px; }
+.cf-card-main { background: #fff; border: 1px solid var(--cf-border); border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+.cf-card-header { padding: 16px 24px; background: var(--cf-bg); border-bottom: 1px solid var(--cf-border); display: flex; justify-content: space-between; align-items: center; }
+.cf-card-header h4 { margin: 0; font-size: 15px; font-weight: 700; color: #334155; }
+
 .cf-table { width: 100%; border-collapse: collapse; }
-.cf-table th { text-align: left; padding: 12px; font-size: 12px; color: #64748b; border-bottom: 1px solid var(--cf-border); }
-.cf-table td { padding: 12px; border-bottom: 1px solid #f8fafc; font-size: 13px; vertical-align: middle; }
-.cf-toggle { width: 40px; height: 20px; background: #e2e8f0; border-radius: 20px; border: none; position: relative; cursor: pointer; }
-.cf-toggle.active { background: var(--cf-green); }
-.cf-toggle-handle { width: 16px; height: 16px; background: white; border-radius: 50%; position: absolute; top: 2px; left: 2px; transition: all 0.2s; }
-.cf-toggle.active .cf-toggle-handle { left: 22px; }
-.cf-btn-cache { background: #fffbeb; border: 1px solid #fef3c7; color: #92400e; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; cursor: pointer; }
-.cf-btn-cache:hover { background: #fef3c7; }
+.cf-table th { padding: 14px 24px; text-align: left; font-size: 12px; color: var(--cf-gray); font-weight: 600; text-transform: uppercase; }
+.cf-table td { padding: 16px 24px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+
+.cf-label-type { background: #eff6ff; color: #1d4ed8; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+.cf-text-bold { font-weight: 600; color: #1e293b; }
+.cf-proxy-indicator { color: #cbd5e1; font-size: 18px; }
+.cf-proxy-indicator.active { color: var(--cf-orange); }
+
+.cf-btn-icon-edit, .cf-btn-icon-delete { background: none; border: none; padding: 6px; cursor: pointer; border-radius: 6px; transition: 0.2s; }
+.cf-btn-icon-edit:hover { background: #f1f5f9; color: var(--cf-blue); }
+.cf-btn-icon-delete:hover { background: #fee2e2; color: #ef4444; }
+
+/* Migration UI */
+.cf-migration-overlay { padding: 60px 0; }
+.cf-migration-card { max-width: 650px; margin: 0 auto; background: #fff; border: 1px solid var(--cf-border); border-radius: 24px; padding: 48px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); text-align: center; }
+.cf-icon-pulse { width: 80px; height: 80px; background: #fff7ed; color: var(--cf-orange); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 24px; animation: pulse 2s infinite; }
+.cf-migration-header h3 { font-size: 28px; font-weight: 800; margin-bottom: 12px; }
+.cf-migration-header p { color: var(--cf-gray); font-size: 16px; line-height: 1.6; }
+.cf-migration-body { text-align: left; margin: 40px 0; }
+.cf-step { display: flex; gap: 20px; margin-bottom: 24px; }
+.cf-step-num { width: 32px; height: 32px; background: var(--cf-bg); color: var(--cf-gray); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+.cf-step-text strong { display: block; margin-bottom: 4px; color: var(--cf-dark); }
+.cf-step-text p { margin: 0; font-size: 14px; color: var(--cf-gray); }
+.cf-btn-migrate-action { background: var(--cf-orange); color: #fff; border: none; padding: 16px 40px; border-radius: 12px; font-weight: 700; font-size: 18px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 12px rgba(243, 128, 32, 0.3); }
+.cf-btn-migrate-action:hover { background: var(--cf-orange-dark); transform: translateY(-2px); }
+.cf-pro-upsell { margin-top: 24px; font-size: 13px; color: var(--cf-gray); }
+
+/* Sidebar */
+.cf-card-side { background: #fff; border: 1px solid var(--cf-border); border-radius: 16px; margin-bottom: 24px; overflow: hidden; }
+.cf-form-side { padding: 20px; }
+.cf-input-side, .cf-select-side { width: 100%; padding: 12px; border: 1px solid var(--cf-border); border-radius: 8px; margin-bottom: 12px; font-size: 14px; }
+.cf-btn-add-side { width: 100%; background: var(--cf-dark); color: #fff; border: none; padding: 12px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+.cf-btn-add-side:hover { background: #1e293b; }
+
+.cf-toggles-list { padding: 12px 20px 20px; }
+.cf-toggle-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
+.cf-toggle-label strong { display: block; font-size: 14px; }
+.cf-toggle-label span { font-size: 11px; color: var(--cf-gray); }
+.cf-toggle-btn { width: 44px; height: 24px; background: #e2e8f0; border-radius: 20px; border: none; position: relative; cursor: pointer; transition: 0.3s; }
+.cf-toggle-btn.active { background: var(--cf-green); }
+.cf-toggle-knob { width: 18px; height: 18px; background: #fff; border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+.cf-toggle-btn.active .cf-toggle-knob { left: 23px; }
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(243, 128, 32, 0.4); }
+    70% { box-shadow: 0 0 0 15px rgba(243, 128, 32, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(243, 128, 32, 0); }
+}
+.animate-pop { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+@keyframes pop {
+    0% { transform: scale(0.8); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
 </style>

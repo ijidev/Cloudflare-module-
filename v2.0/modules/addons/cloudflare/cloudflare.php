@@ -403,65 +403,58 @@ function cloudflare_clientarea($vars) {
         }
 
         $domain = $domainData->domain;
-        $zoneId = $api->getZoneId($domain);
-
-        // Provision if needed
-        if (!$zoneId) {
-            try {
-                $response = $api->createZone($domain, $dbSettings['master_account_id']);
-                $zoneId = $response['result']['id'];
-                
-                $templates = Capsule::table('mod_cloudflare_templates')->get();
-                $serverIp = Capsule::table('tblhosting')->join('tblservers', 'tblservers.id', '=', 'tblhosting.server')->where('tblhosting.domain', $domain)->value('tblservers.ipaddress');
-                // Set default nameservers to domain in WHMCS
-                $ns = $response['result']['name_servers'] ?? [];
-                if (count($ns) >= 2) {
-                    localAPI('DomainUpdateNameservers', [
-                        'domainid' => $id,
-                        'ns1' => $ns[0],
-                        'ns2' => $ns[1],
-                    ]);
-                }
-                header("Location: index.php?m=cloudflare&action=manage&id=$id&success=1");
-                exit;
-            } catch (\Exception $e) { 
-                $msg = $e->getMessage();
-                $error = $msg;
-            }
+        $needsMigration = false;
+        $zoneId = null;
+        
+        try {
+            $zoneId = $api->getZoneId($domain);
+        } catch (\Exception $e) {
+            // If API fails, we might need migration or just have a bad token
         }
 
-        // Tier Check (Core Integrated Client-Level + Legacy Product Addon fallback)
+        if (!$zoneId) {
+            $needsMigration = true;
+        }
+
+        // Tier Check (Core Integrated Client-Level)
         $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
         $isPro = (bool)($clientStatus->is_pro ?? false);
 
-        if (!$isPro && $dbSettings['pro_addon_id'] > 0) {
-            $proId = (int)$dbSettings['pro_addon_id'];
-            
-            // Check if it's an active Product Addon
-            $hasAddon = Capsule::table('tblhostingaddon')
-                ->join('tblhosting', 'tblhostingaddon.hostingid', '=', 'tblhosting.id')
+        // Fallback check for active Pro services (by name)
+        if (!$isPro) {
+            $isPro = Capsule::table('tblhosting')
+                ->join('tblproducts', 'tblproducts.id', '=', 'tblhosting.packageid')
                 ->where('tblhosting.userid', $clientId)
-                ->where('tblhostingaddon.addonid', $proId)
+                ->where('tblhosting.status', 'Active')
+                ->where('tblproducts.name', 'LIKE', '%Cloudflare Pro%')
+                ->exists() || 
+                Capsule::table('tblhostingaddon')
+                ->join('tbladdons', 'tbladdons.id', '=', 'tblhostingaddon.addonid')
                 ->where('tblhostingaddon.status', 'Active')
+                ->where('tbladdons.name', 'LIKE', '%Cloudflare Pro%')
                 ->exists();
-
-            // Check if it's an active Standalone Product
-            $hasProduct = Capsule::table('tblhosting')
-                ->where('userid', $clientId)
-                ->where('packageid', $proId)
-                ->where('status', 'Active')
-                ->exists();
-
-            $isPro = ($hasAddon || $hasProduct);
         }
 
         $proUpgradeUrl = $dbSettings['pro_upgrade_url'] ?: 'cart.php?gid=addons';
-        // Add dynamic variables to the URL if needed (e.g. domain name)
         $proUpgradeUrl = str_replace('{domain}', $domain, $proUpgradeUrl);
 
         // Handle Operations
         if ($_POST['op']) {
             try {
+                if ($_POST['op'] == 'migrate') {
+                    $response = $api->createZone($domain, $dbSettings['master_account_id']);
+                    $zoneId = $response['result']['id'];
+                    // Apply Templates if any
+                    $templates = Capsule::table('mod_cloudflare_templates')->get();
+                    // Set nameservers
+                    $ns = $response['result']['name_servers'] ?? [];
+                    if (count($ns) >= 2) {
+                        localAPI('DomainUpdateNameservers', ['domainid' => $id, 'ns1' => $ns[0], 'ns2' => $ns[1]]);
+                    }
+                    header("Location: index.php?m=cloudflare&action=manage&id=$id&success=migration");
+                    exit;
+                }
+
                 switch ($_POST['op']) {
                     case 'addRecord':
                         $api->addDNSRecord($zoneId, $_POST['type'], $_POST['name'], $_POST['content']);
