@@ -164,6 +164,7 @@
     </div>
 </div>
 
+{literal}
 <script>
 function toggleByot(val) {
     const section = document.getElementById('byot-section');
@@ -244,7 +245,9 @@ function filterDomains() {
     });
 {/if}
 </script>
+{/literal}
 
+{literal}
 <style>
 :root {
     --cf-primary: #f38020;
@@ -347,3 +350,4 @@ function filterDomains() {
     .cf-search-box { width: 100%; }
 }
 </style>
+{/literal}

@@ -176,6 +176,7 @@
     {/if}
 </div>
 
+{literal}
 <script>
 function toggleEdit(id) {
     const row = document.getElementById('edit-row-' + id);
@@ -254,7 +255,9 @@ function handleFormSubmit(form) {
     });
 {/if}
 </script>
+{/literal}
 
+{literal}
 <style>
 :root {
     --cf-orange: #f38020;
@@ -339,3 +342,4 @@ function handleFormSubmit(form) {
     100% { transform: scale(1); opacity: 1; }
 }
 </style>
+{/literal}
