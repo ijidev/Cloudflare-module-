@@ -8,9 +8,11 @@ A premium, industrial-themed Cloudflare management module for WHMCS supporting t
 The primary version of the module. This is an **Addon Module** that integrates directly into the core domain management flow.
 - **Core System Integration**: Ties directly into WHMCS domains, no longer a standalone product.
 - **Domain Sync Tool**: Admin can bulk-select which domains are managed via Cloudflare.
+- **Client-Level Pro Tier**: Tier status is tied to the Client Account. One "Pro" subscription secures all domains.
+- **Flexible Account Modes**: Supports **Managed** (Admin Account), **Dedicated** (Isolated), and **BYOT** (Client Token).
+- **Migration Guide**: Professional UI walkthrough for migrating domains from existing Cloudflare accounts.
+- **Full DNS Control**: Add, Edit, and Delete DNS records with instant sync.
 - **Automated Nameservers**: Provisioned domains automatically switch to Cloudflare edge nameservers.
-- **Tiered Access**: Free "Managed" mode vs. Paid "Pro" mode (BYOT & Dedicated).
-- **Stitch Design System**: High-performance, premium industrial UI.
 - [Read v2.0 Documentation](v2.0/v2.0_DOCUMENTATION.md)
 
 ### 🔹 [v1.0 Standalone Server Module (Legacy)](v1.0/)
@@ -31,4 +33,4 @@ Please refer to the documentation inside the specific version folder you wish to
 For most modern WHMCS setups, **v2.0** is recommended for native integration with domain management.
 
 ---
-*Last updated: 2026-04-22*
+*Last updated: 2026-04-23*
