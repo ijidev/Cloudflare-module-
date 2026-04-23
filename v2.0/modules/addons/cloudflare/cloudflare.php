@@ -100,6 +100,11 @@ function cloudflare_deactivate() {
 }
 
 function cloudflare_output($vars) {
+    // Ensure tables exist (Self-healing on update)
+    if (!Capsule::schema()->hasTable('mod_cloudflare_client_status')) {
+        cloudflare_activate();
+    }
+
     $action = $_REQUEST['action'] ?? 'settings';
     $modulelink = $vars['modulelink'];
 
@@ -358,6 +363,11 @@ function cloudflare_output($vars) {
 
 function cloudflare_clientarea($vars) {
     if (!isset($_SESSION['uid'])) return "Access Denied";
+
+    // Ensure tables exist
+    if (!Capsule::schema()->hasTable('mod_cloudflare_client_status')) {
+        cloudflare_activate();
+    }
 
     $action = $_REQUEST['action'] ?? 'center';
     $clientId = $_SESSION['uid'];
