@@ -489,7 +489,7 @@ function cloudflare_clientarea($vars) {
                 ->exists();
         }
 
-        $proUpgradeUrl = $dbSettings['pro_upgrade_url'] ?: 'cart.php?gid=addons';
+        $proUpgradeUrl = $dbSettings['pro_upgrade_url'] ?? 'cart.php?gid=addons';
         $proUpgradeUrl = str_replace('{domain}', $domain, $proUpgradeUrl);
 
         // Handle Operations
@@ -589,7 +589,7 @@ function cloudflare_clientarea($vars) {
 
     $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
     $isPro = (bool)($clientStatus->is_pro ?? false);
-    $proUpgradeUrl = $dbSettings['pro_upgrade_url'] ?: 'cart.php?gid=addons';
+    $proUpgradeUrl = $dbSettings['pro_upgrade_url'] ?? 'cart.php?gid=addons';
 
     return [
         'pagetitle' => 'Cloudflare Manager Overview',
