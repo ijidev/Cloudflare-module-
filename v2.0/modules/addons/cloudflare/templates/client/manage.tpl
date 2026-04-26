@@ -84,10 +84,10 @@
                         <tbody>
                             {foreach from=$dnsRecords item=record}
                                 <tr id="row-{$record.id}">
-                                    <td><span class="cf-label-type">{$record.type}</span></td>
-                                    <td><span class="cf-text-bold">{$record.name}</span></td>
-                                    <td><span class="cf-text-muted" title="{$record.content}">{$record.content|truncate:35:"..."}</span></td>
-                                    <td>
+                                    <td data-label="Type"><span class="cf-label-type">{$record.type}</span></td>
+                                    <td data-label="Name"><span class="cf-text-bold">{$record.name}</span></td>
+                                    <td data-label="Content"><span class="cf-text-muted" title="{$record.content}">{$record.content|truncate:35:"..."}</span></td>
+                                    <td data-label="Proxy">
                                         <div class="cf-proxy-indicator {if $record.proxied}active{/if}" title="{if $record.proxied}Proxied{else}DNS Only{/if}">
                                             <i class="fa fa-cloud"></i>
                                         </div>
@@ -340,6 +340,17 @@ function handleFormSubmit(form) {
 @keyframes pop {
     0% { transform: scale(0.8); opacity: 0; }
     100% { transform: scale(1); opacity: 1; }
+}
+@media (max-width: 992px) {
+    .cf-header { flex-direction: column; gap: 20px; align-items: flex-start; }
+    .cf-grid { grid-template-columns: 1fr; }
+    .cf-table thead { display: none; }
+    .cf-table tr { display: block; border: 1px solid #eee; border-radius: 12px; margin-bottom: 15px; padding: 15px; position: relative; }
+    .cf-table td { display: block; border: none; padding: 10px 0; text-align: left !important; }
+    .cf-table td:before { content: attr(data-label); font-weight: 700; display: block; font-size: 11px; color: var(--cf-gray); margin-bottom: 5px; text-transform: uppercase; }
+    .cf-row-actions { justify-content: flex-start; }
+    .cf-sidebar { order: -1; }
+    .cf-migration-card { padding: 30px 20px; }
 }
 </style>
 {/literal}

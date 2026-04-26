@@ -42,14 +42,15 @@
                 <ul class="cf-guide-list">
                     <li><i class="fa fa-check" style="color:#058a5e;"></i> Zero setup required</li>
                     <li><i class="fa fa-check" style="color:#058a5e;"></i> Managed directly via this portal</li>
-                    <li><i class="fa fa-times" style="color:#dc2626;"></i> No direct login to Cloudflare.com</li>
+                    <li><i class="fa fa-exclamation-triangle" style="color:#ca8a04;"></i> Shared risk (If one domain is flagged, others may be affected)</li>
                 </ul>
             </div>
             
+            {if $dedicatedAvailable}
             <div class="cf-guide-card">
                 <div class="cf-guide-icon" style="color: #f38020; background: #ffedd5;"><i class="fa fa-lock"></i></div>
                 <h4>Dedicated Sub-Account</h4>
-                <div class="cf-guide-tags"><span class="cf-tag" style="background: #fef3c7; color: #92400e;">Pro Tier</span></div>
+                <div class="cf-guide-tags"><span class="cf-tag" style="background: #fef3c7; color: #92400e;">Paid Tier</span></div>
                 <p>We automatically provision a totally isolated Cloudflare account using your WHMCS email. It operates independently while still billing through your hosting invoice.</p>
                 <ul class="cf-guide-list">
                     <li><i class="fa fa-check" style="color:#058a5e;"></i> Direct login to Cloudflare.com</li>
@@ -57,15 +58,17 @@
                     <li><i class="fa fa-times" style="color:#dc2626;"></i> Must not have an existing CF account</li>
                 </ul>
             </div>
+            {/if}
 
-            <div class="cf-guide-card">
+            <div class="cf-guide-card cf-card-recommended">
                 <div class="cf-guide-icon" style="color: #3b82f6; background: #dbeafe;"><i class="fa fa-key"></i></div>
+                <div class="cf-recommended-badge">RECOMMENDED</div>
                 <h4>BYOT (Personal Token)</h4>
-                <div class="cf-guide-tags"><span class="cf-tag" style="background: #fef3c7; color: #92400e;">Pro Tier</span></div>
-                <p>Connect an existing Cloudflare account using an API token. You maintain 100% ownership, administrative control, and billing relationship with Cloudflare directly.</p>
+                <div class="cf-guide-tags"><span class="cf-tag" style="background: #e2e8f0; color: #475569;">Free Tier</span></div>
+                <p>Connect your personal Cloudflare account using an API token. You maintain 100% ownership, administrative control, and full data privacy.</p>
                 <ul class="cf-guide-list">
                     <li><i class="fa fa-check" style="color:#058a5e;"></i> Full administrative control</li>
-                    <li><i class="fa fa-check" style="color:#058a5e;"></i> Use any existing Cloudflare account</li>
+                    <li><i class="fa fa-check" style="color:#058a5e;"></i> Private & Isolated environment</li>
                     <li><i class="fa fa-info-circle" style="color:#ca8a04;"></i> Manual token generation required</li>
                 </ul>
             </div>
@@ -96,8 +99,8 @@
                         <label>Architecture Mode</label>
                         <select name="account_type" class="cf-select-custom" onchange="toggleByot(this.value)">
                             <option value="managed" {if $accountType == 'managed'}selected{/if}>Managed Core</option>
-                            <option value="dedicated" {if $accountType == 'dedicated'}selected{/if}>Dedicated Sub-Account</option>
-                            <option value="byot" {if $accountType == 'byot'}selected{/if}>BYOT (Personal Token)</option>
+                            {if $dedicatedAvailable}<option value="dedicated" {if $accountType == 'dedicated'}selected{/if}>Dedicated Sub-Account</option>{/if}
+                            <option value="byot" {if $accountType == 'byot'}selected{/if}>BYOT (Personal Token) - RECOMMENDED</option>
                         </select>
                     </div>
                     <div id="byot-section" class="cf-form-subgrid" style="{if $accountType != 'byot'}display:none;{/if}">
@@ -140,16 +143,16 @@
                 <tbody>
                     {foreach from=$domains item=domain}
                         <tr>
-                            <td>
+                            <td data-label="Domain Name">
                                 <div class="cf-domain-info">
                                     <span class="cf-domain-text">{$domain->domain}</span>
                                 </div>
                             </td>
-                            <td>
+                            <td data-label="Network Status">
                                 <span class="cf-status-tag tag-active">Active</span>
                             </td>
-                            <td>
-                                <span class="cf-infra-tag">{if $isPro}{$accountType|upper}{else}MANAGED{/if}</span>
+                            <td data-label="Infrastructure">
+                                <span class="cf-infra-tag">{if $isPro && $accountType == 'dedicated'}DEDICATED{elseif $isPro && $accountType == 'byot'}BYOT{else}MANAGED{/if}</span>
                             </td>
                             <td style="text-align: right;">
                                 <a href="index.php?m=cloudflare&action=manage&id={$domain->id}" class="cf-btn-action-manage">
@@ -341,6 +344,10 @@ function filterDomains() {
     100% { transform: translateY(0); opacity: 1; }
 }
 
+/* Recommended Badge */
+.cf-card-recommended { position: relative; border-color: #3b82f6 !important; box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.2) !important; }
+.cf-recommended-badge { position: absolute; top: -12px; right: 20px; background: #3b82f6; color: #fff; font-size: 10px; font-weight: 800; padding: 4px 12px; border-radius: 20px; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3); }
+
 @media (max-width: 992px) {
     .cf-dashboard-header { flex-direction: column; gap: 20px; }
     .cf-premium-banner { flex-direction: column; text-align: center; gap: 30px; }
@@ -348,6 +355,14 @@ function filterDomains() {
     .cf-form-subgrid { grid-template-columns: 1fr; }
     .cf-domain-header { flex-direction: column; gap: 20px; align-items: flex-start; }
     .cf-search-box { width: 100%; }
+    .cf-stats-container { width: 100%; overflow-x: auto; padding-bottom: 10px; }
+    .cf-stat-box { flex-shrink: 0; }
+    .cf-guide-grid { grid-template-columns: 1fr; }
+    .cf-dashboard-table thead { display: none; }
+    .cf-dashboard-table tr { display: block; background: #fff; border: 1px solid #eee; border-radius: 12px; margin-bottom: 15px; padding: 15px; }
+    .cf-dashboard-table td { display: block; border: none; padding: 10px 0; text-align: left !important; }
+    .cf-dashboard-table td:before { content: attr(data-label); font-weight: 700; display: block; font-size: 11px; color: var(--cf-text-gray); margin-bottom: 5px; text-transform: uppercase; }
+    .cf-btn-action-manage { width: 100%; justify-content: center; }
 }
 </style>
 {/literal}

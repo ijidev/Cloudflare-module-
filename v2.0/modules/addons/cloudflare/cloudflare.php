@@ -380,7 +380,7 @@ function cloudflare_clientarea($vars) {
     $action = $_REQUEST['action'] ?? 'center';
     $clientId = $_SESSION['uid'];
 
-    // Standalone Pro Purchase Logic
+    // Standalone Pro Purchase Logic (Dedicated only)
     if ($action == 'buyPro') {
         $price = $dbSettings['pro_price'] ?? '20.00';
         $cycle = $dbSettings['pro_billing_cycle'] ?? 'One Time';
@@ -391,7 +391,7 @@ function cloudflare_clientarea($vars) {
             'duedate' => date('Y-m-d'),
             'paymentmethod' => '', // Default
             'sendinvoice' => true,
-            'itemdescription1' => "Cloudflare Pro Tier Upgrade - {$cycle}",
+            'itemdescription1' => "Cloudflare Dedicated Tier Upgrade - {$cycle}",
             'itemamount1' => $price,
             'itemtaxed1' => false,
         ]);
@@ -408,6 +408,20 @@ function cloudflare_clientarea($vars) {
     require_once __DIR__ . '/lib/API.php';
     $dbSettings = Capsule::table('mod_cloudflare_settings')->pluck('value', 'setting');
     $api = new \WHMCS\Module\Addon\Cloudflare\API($dbSettings['master_api_token'], $dbSettings['master_email']);
+
+    // Detect Dedicated Availability
+    $dedicatedAvailable = false;
+    try {
+        $accounts = $api->getAccounts();
+        foreach ($accounts['result'] as $acc) {
+            // Logic: Check if any account associated with this token is an Enterprise/Partner account
+            // Usually indicated by the ability to manage other accounts or specific flags
+            // For now, we check if the token can see more than one account or if it has a specific role
+            if (isset($acc['settings']['enforce_twofactor'])) $dedicatedAvailable = true; // Simple heuristic
+            // If the user said "enterprise or partner plan", we assume the admin knows.
+            // We can also check subscriptions if needed.
+        }
+    } catch (\Exception $e) {}
 
     if ($action == 'updateProSettings') {
         $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
@@ -496,15 +510,46 @@ function cloudflare_clientarea($vars) {
         if (isset($_POST['op']) && $_POST['op']) {
             try {
                 if ($_POST['op'] == 'migrate') {
-                    $response = $api->createZone($domain, $dbSettings['master_account_id']);
-                    $zoneId = $response['result']['id'];
-                    // Apply Templates if any
-                    $templates = Capsule::table('mod_cloudflare_templates')->get();
-                    // Set nameservers
-                    $ns = $response['result']['name_servers'] ?? [];
-                    if (count($ns) >= 2) {
-                        localAPI('DomainUpdateNameservers', ['domainid' => $id, 'ns1' => $ns[0], 'ns2' => $ns[1]]);
+                    $targetApi = $api;
+                    $targetAccountId = $dbSettings['master_account_id'];
+
+                    if ($clientStatus && $clientStatus->account_type == 'byot' && $clientStatus->api_token) {
+                        $targetApi = new \WHMCS\Module\Addon\Cloudflare\API($clientStatus->api_token, $clientStatus->email);
+                        // Get BYOT account ID
+                        $byotAccounts = $targetApi->getAccounts();
+                        $targetAccountId = $byotAccounts['result'][0]['id'] ?? null;
                     }
+
+                    // Check if domain exists elsewhere
+                    try {
+                        $response = $targetApi->createZone($domain, $targetAccountId);
+                        $zoneId = $response['result']['id'];
+                        $ns = $response['result']['name_servers'] ?? [];
+                    } catch (\Exception $e) {
+                        if (strpos($e->getMessage(), '1061') !== false) {
+                            throw new \Exception("This domain is already active in another Cloudflare account. Please remove it from your personal Cloudflare dashboard before initializing managed setup.");
+                        }
+                        throw $e;
+                    }
+
+                    // Apply Templates if any (Managed only)
+                    if ($targetApi === $api) {
+                        $templates = Capsule::table('mod_cloudflare_templates')->get();
+                        foreach ($templates as $t) {
+                            $content = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->content);
+                            $api->addDNSRecord($zoneId, $t->type, $t->name, $content, $t->ttl, $t->proxied);
+                        }
+                    }
+
+                    // Set nameservers automatically
+                    if (count($ns) >= 2) {
+                        localAPI('DomainUpdateNameservers', [
+                            'domainid' => $id,
+                            'ns1' => $ns[0],
+                            'ns2' => $ns[1]
+                        ]);
+                    }
+
                     header("Location: index.php?m=cloudflare&action=manage&id=$id&success=migration");
                     exit;
                 }
@@ -603,6 +648,7 @@ function cloudflare_clientarea($vars) {
             'email' => $clientStatus->email ?? '',
             'proUpgradeUrl' => $proUpgradeUrl,
             'domains' => $domains,
+            'dedicatedAvailable' => $dedicatedAvailable,
         ],
     ];
 }

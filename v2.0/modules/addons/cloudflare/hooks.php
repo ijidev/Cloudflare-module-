@@ -77,3 +77,40 @@ add_hook('ClientAreaPrimaryNavbar', 1, function($primaryNavbar) {
     }
 });
 
+/**
+ * Automatic Cloudflare Provisioning on Domain Add
+ */
+add_hook('DomainAdd', 1, function($vars) {
+    $domainId = $vars['domainid'];
+    $domain = $vars['domain'];
+    
+    $dbSettings = Capsule::table('mod_cloudflare_settings')->pluck('value', 'setting');
+    if (empty($dbSettings['master_api_token'])) return;
+    
+    require_once __DIR__ . '/lib/API.php';
+    $api = new \WHMCS\Module\Addon\Cloudflare\API($dbSettings['master_api_token'], $dbSettings['master_email']);
+    
+    try {
+        $response = $api->createZone($domain, $dbSettings['master_account_id']);
+        $zoneId = $response['result']['id'];
+        $ns = $response['result']['name_servers'] ?? [];
+        
+        // Apply DNS Templates
+        $templates = Capsule::table('mod_cloudflare_templates')->get();
+        foreach ($templates as $t) {
+            $content = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->content);
+            $api->addDNSRecord($zoneId, $t->type, $t->name, $content, $t->ttl, $t->proxied);
+        }
+        
+        // Update Nameservers
+        if (count($ns) >= 2) {
+            localAPI('DomainUpdateNameservers', [
+                'domainid' => $domainId,
+                'ns1' => $ns[0],
+                'ns2' => $ns[1]
+            ]);
+        }
+    } catch (\Exception $e) {
+        // Silently fail if zone exists or API is down
+    }
+});

@@ -156,4 +156,21 @@ class API
     {
         return $this->request("zones/$zoneId");
     }
+
+    public function getAccounts()
+    {
+        return $this->request("accounts");
+    }
+
+    public function getPlanType($accountId)
+    {
+        try {
+            $response = $this->request("accounts/$accountId");
+            // Check for Enterprise/Partner flags in account roles or subscriptions if possible
+            // For now, we'll return the response and check in the controller
+            return $response;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
 }
