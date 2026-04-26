@@ -414,44 +414,101 @@ function cloudflare_clientarea($vars) {
     try {
         $accounts = $api->getAccounts();
         foreach ($accounts['result'] as $acc) {
-            // Logic: Check if any account associated with this token is an Enterprise/Partner account
-            // Usually indicated by the ability to manage other accounts or specific flags
-            // For now, we check if the token can see more than one account or if it has a specific role
-            if (isset($acc['settings']['enforce_twofactor'])) $dedicatedAvailable = true; // Simple heuristic
-            // If the user said "enterprise or partner plan", we assume the admin knows.
-            // We can also check subscriptions if needed.
+            if (isset($acc['settings']['enforce_twofactor'])) $dedicatedAvailable = true;
         }
     } catch (\Exception $e) {}
+
+    // Handle AJAX Requests
+    if (isset($_POST['ajax']) && $_POST['ajax']) {
+        header('Content-Type: application/json');
+        try {
+            $id = (int)$_REQUEST['id'];
+            $domainData = Capsule::table('tbldomains')->where('id', $id)->where('userid', $clientId)->first();
+            if (!$domainData) throw new \Exception("Domain not found.");
+            $domain = $domainData->domain;
+            
+            $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
+            if ($clientStatus && $clientStatus->account_type == 'byot' && $clientStatus->api_token) {
+                $api = new \WHMCS\Module\Addon\Cloudflare\API($clientStatus->api_token, $clientStatus->email);
+            }
+            $zoneId = $api->getZoneId($domain);
+
+            switch ($_POST['op']) {
+                case 'addRecord':
+                    $api->addDNSRecord($zoneId, $_POST['type'], $_POST['name'], $_POST['content']);
+                    break;
+                case 'editRecord':
+                    $api->updateDNSRecord($zoneId, $_POST['record_id'], $_POST['type'] ?: 'A', $_POST['name'], $_POST['content']);
+                    break;
+                case 'deleteRecord':
+                    $api->deleteDNSRecord($zoneId, $_POST['record_id']);
+                    break;
+                case 'purgeCache':
+                    $api->purgeCache($zoneId);
+                    break;
+                case 'toggleSecurity':
+                    $settings = $api->getZoneSettings($zoneId)['result'];
+                    $current = 'medium';
+                    foreach ($settings as $s) { if ($s['id'] == 'security_level') $current = $s['value']; }
+                    $api->updateZoneSetting($zoneId, 'security_level', ($current == 'under_attack' ? 'medium' : 'under_attack'));
+                    break;
+                case 'togglePause':
+                    $details = $api->getZoneDetails($zoneId)['result'];
+                    $api->pauseZone($zoneId, !$details['paused']);
+                    break;
+                case 'sync':
+                    if (!$zoneId) {
+                        $targetAccountId = ($clientStatus && $clientStatus->account_type == 'byot') ? null : $dbSettings['master_account_id'];
+                        $resp = $api->createZone($domain, $targetAccountId);
+                        $zoneId = $resp['result']['id'];
+                        $ns = $resp['result']['name_servers'] ?? [];
+                        if (count($ns) >= 2) {
+                            localAPI('DomainUpdateNameservers', ['domainid' => $id, 'ns1' => $ns[0], 'ns2' => $ns[1]]);
+                        }
+                        $templates = Capsule::table('mod_cloudflare_templates')->get();
+                        foreach ($templates as $t) {
+                            $content = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->content);
+                            $api->addDNSRecord($zoneId, $t->type, $t->name, $content, $t->ttl, $t->proxied);
+                        }
+                        echo json_encode(['success' => true, 'message' => "Domain connected and initialized successfully! Please remove any old records from previous accounts."]);
+                    } else {
+                        echo json_encode(['success' => true, 'message' => "Domain is already active."]);
+                    }
+                    exit;
+            }
+            echo json_encode(['success' => true]);
+        } catch (\Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        exit;
+    }
 
     if ($action == 'updateProSettings') {
         $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
         if ($clientStatus && $clientStatus->is_pro) {
+            $oldType = $clientStatus->account_type;
+            $newType = $_POST['account_type'];
             
-            $accountType = $_POST['account_type'];
-            $apiToken = $_POST['api_token'];
-            $email = $_POST['email'];
-
-            if ($accountType == 'dedicated') {
-                $client = Capsule::table('tblclients')->where('id', $clientId)->first();
-                $email = $client->email; // Enforce WHMCS Email
-                
-                try {
-                    // Attempt to create/verify the dedicated account via Master API
-                    // If the master token lacks privileges or the email exists, this will throw.
-                    $api->createAccount($client->firstname . ' ' . $client->lastname, $email);
-                    // On success, we don't need a client API token; the master token handles it via tenant access.
-                    $apiToken = ''; 
-                } catch (\Exception $e) {
-                    $errorMsg = urlencode("We could not provision a dedicated account for {$email}. Error: " . $e->getMessage() . " If you already have a Cloudflare account, please select BYOT.");
-                    header("Location: index.php?m=cloudflare&error=" . $errorMsg);
-                    exit;
+            if ($oldType == 'managed' && $newType == 'byot' && !empty($_POST['api_token'])) {
+                $domainData = Capsule::table('tbldomains')->where('userid', $clientId)->get();
+                $byotApi = new \WHMCS\Module\Addon\Cloudflare\API($_POST['api_token'], $_POST['email']);
+                foreach ($domainData as $d) {
+                    try {
+                        $zId = $api->getZoneId($d->domain);
+                        if ($zId) {
+                            $records = $api->getDNSRecords($zId)['result'] ?? [];
+                            $nZone = $byotApi->createZone($d->domain);
+                            $nZoneId = $nZone['result']['id'];
+                            foreach ($records as $r) {
+                                try { $byotApi->addDNSRecord($nZoneId, $r['type'], $r['name'], $r['content'], $r['ttl'], $r['proxied']); } catch (\Exception $e) {}
+                            }
+                        }
+                    } catch (\Exception $e) {}
                 }
             }
 
             Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->update([
-                'account_type' => $accountType,
-                'api_token' => $apiToken,
-                'email' => $email
+                'account_type' => $newType, 'api_token' => $_POST['api_token'], 'email' => $_POST['email']
             ]);
         }
         header("Location: index.php?m=cloudflare&success=settings");
@@ -590,11 +647,13 @@ function cloudflare_clientarea($vars) {
         if (!isset($error)) $error = '';
 
         $underAttack = false;
+        $nameservers = [];
         if (!$needsMigration) {
             try {
                 $zoneDetails = $api->getZoneDetails($zoneId)['result'] ?? [];
                 $dnsRecords = $api->getDNSRecords($zoneId)['result'] ?? [];
                 $settings = $api->getZoneSettings($zoneId)['result'] ?? [];
+                $nameservers = $zoneDetails['name_servers'] ?? [];
                 foreach ($settings as $s) {
                     if ($s['id'] == 'security_level' && $s['value'] == 'under_attack') {
                         $underAttack = true;
@@ -618,6 +677,7 @@ function cloudflare_clientarea($vars) {
                 'proUpgradeUrl' => $proUpgradeUrl,
                 'needsMigration' => $needsMigration,
                 'underAttack' => $underAttack,
+                'nameservers' => $nameservers,
             ],
         ];
     }

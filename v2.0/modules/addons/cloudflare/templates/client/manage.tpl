@@ -17,6 +17,17 @@
             </button>
         </div>
     </div>
+    
+    <!-- Nameserver Information -->
+    {if $nameservers}
+    <div class="cf-ns-alert animate-pop">
+        <div class="cf-ns-icon"><i class="fa fa-info-circle"></i></div>
+        <div class="cf-ns-content">
+            <strong>Update your Nameservers</strong>
+            <p>Ensure your domain is pointed to: <code class="cf-code">{$nameservers[0]}</code> and <code class="cf-code">{$nameservers[1]}</code></p>
+        </div>
+    </div>
+    {/if}
 
     {if $needsMigration}
         <div class="cf-migration-overlay">
@@ -183,30 +194,56 @@ function toggleEdit(id) {
     row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
 }
 
-function handleOp(op) {
-    const swalConfig = {
+function handleOp(op, extraData = {}) {
+    Swal.fire({
         title: 'Processing...',
         text: 'Communicating with Cloudflare API',
         allowOutsideClick: false,
         didOpen: () => { Swal.showLoading(); }
-    };
+    });
 
-    if (op === 'purgeCache') {
-        swalConfig.title = 'Purging Cache...';
-    } else if (op === 'migrate') {
-        swalConfig.title = 'Initializing Migration...';
+    const formData = new FormData();
+    formData.append('ajax', '1');
+    formData.append('op', op);
+    formData.append('id', '{$cf_domain_id}');
+    for (const key in extraData) {
+        formData.append(key, extraData[key]);
     }
 
-    Swal.fire(swalConfig);
-
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.innerHTML = `<input type="hidden" name="op" value="${op}">`;
-    document.body.appendChild(form);
-    form.submit();
+    fetch('index.php?m=cloudflare&action=manage&id={$cf_domain_id}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Action Completed',
+                text: data.message || 'The request was successful.',
+                timer: 2000,
+                showConfirmButton: false
+            }).then(() => {
+                window.location.reload(); // Still reload on success to update table data for now, but via AJAX
+            });
+        } else {
+            Swal.fire({
+                icon: 'error',
+                title: 'API Error',
+                text: data.message || 'Something went wrong.'
+            });
+        }
+    })
+    .catch(error => {
+        Swal.fire({
+            icon: 'error',
+            title: 'System Error',
+            text: 'Could not connect to the server.'
+        });
+    });
 }
 
-function handleDelete(id) {
+function handleDelete(recordId) {
     Swal.fire({
         title: 'Delete Record?',
         text: "This action cannot be undone on Cloudflare.",
@@ -217,43 +254,23 @@ function handleDelete(id) {
         confirmButtonText: 'Yes, delete it!'
     }).then((result) => {
         if (result.isConfirmed) {
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.innerHTML = `<input type="hidden" name="op" value="deleteRecord"><input type="hidden" name="record_id" value="${id}">`;
-            document.body.appendChild(form);
-            form.submit();
+            handleOp('deleteRecord', { record_id: recordId });
         }
     });
 }
 
 function handleFormSubmit(form) {
-    Swal.fire({
-        title: 'Updating...',
-        allowOutsideClick: false,
-        didOpen: () => { Swal.showLoading(); }
-    });
-    return true;
+    const formData = new FormData(form);
+    const data = {};
+    formData.forEach((value, key) => { data[key] = value; });
+    handleOp(data.op, data);
+    return false;
 }
 
-// Handle Success/Error Notifications
-{if $smarty.get.success}
-    Swal.fire({
-        icon: 'success',
-        title: 'Success!',
-        text: 'Action completed successfully.',
-        timer: 2000,
-        showConfirmButton: false
-    });
-{/if}
-
-{if $error}
-    Swal.fire({
-        icon: 'error',
-        title: 'API Error',
-        text: '{$error|escape:"javascript"}',
-        confirmButtonColor: '#f38020'
-    });
-{/if}
+// Handle Page Refresh Button
+document.querySelector('.cf-btn-refresh').onclick = function() {
+    window.location.reload();
+};
 </script>
 {/literal}
 
@@ -299,6 +316,12 @@ function handleFormSubmit(form) {
 .cf-btn-icon-edit, .cf-btn-icon-delete { background: none; border: none; padding: 6px; cursor: pointer; border-radius: 6px; transition: 0.2s; }
 .cf-btn-icon-edit:hover { background: #f1f5f9; color: var(--cf-blue); }
 .cf-btn-icon-delete:hover { background: #fee2e2; color: #ef4444; }
+
+/* NS Alert */
+.cf-ns-alert { background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid var(--cf-blue); border-radius: 12px; padding: 15px 25px; margin-bottom: 30px; display: flex; align-items: center; gap: 20px; box-shadow: var(--cf-card-shadow); }
+.cf-ns-icon { font-size: 24px; color: var(--cf-blue); }
+.cf-ns-content p { margin: 5px 0 0; color: var(--cf-gray); font-size: 14px; }
+.cf-code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-family: monospace; color: var(--cf-dark); font-weight: 600; }
 
 /* Migration UI */
 .cf-migration-overlay { padding: 60px 0; }

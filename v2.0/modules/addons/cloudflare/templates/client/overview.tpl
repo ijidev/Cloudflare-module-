@@ -24,8 +24,15 @@
                 <span class="cf-stat-lab">Account Tier</span>
             </div>
         </div>
-        </div>
     </div>
+    
+    <!-- Account Privileges Check Alert -->
+    {if $isPro && !$dedicatedAvailable}
+    <div class="cf-notice-bar">
+        <i class="fa fa-info-circle"></i>
+        <span>Dedicated Sub-Account isolation is currently unavailable on this master account. Please use <strong>BYOT</strong> for isolated management.</span>
+    </div>
+    {/if}
 
     <!-- Educational Landing Section -->
     <div class="cf-architecture-guide animate-slide-up">
@@ -77,30 +84,35 @@
 
     <!-- Dynamic Promo / Pro Settings -->
     {if !$isPro}
+        {if $dedicatedAvailable}
         <div class="cf-premium-banner animate-slide-up">
             <div class="cf-premium-info">
                 <div class="cf-premium-badge"><i class="fa fa-bolt"></i> GO PRO</div>
                 <h2>Unlock Enterprise-Grade Controls</h2>
-                <p>BYOT support, Dedicated Account Isolation, and advanced DDoS mitigation are just one click away.</p>
+                <p>Isolated Dedicated Account provisioning and advanced DDoS mitigation are just one click away.</p>
             </div>
             <div class="cf-premium-cta">
                 <a href="index.php?m=cloudflare&action=buyPro" class="cf-btn-premium">Upgrade Now <i class="fa fa-arrow-right"></i></a>
             </div>
         </div>
+        {/if}
     {else}
         <div class="cf-settings-card animate-slide-up">
             <div class="cf-card-header-gradient">
                 <h4><i class="fa fa-sliders"></i> Pro Configuration</h4>
-                <span class="cf-pro-status-badge">ACTIVE</span>
+                <div class="cf-header-right">
+                    <button class="cf-btn-info" onclick="showByotGuide()"><i class="fa fa-question-circle"></i> Setup Guide</button>
+                    <span class="cf-pro-status-badge">ACTIVE</span>
+                </div>
             </div>
             <form method="post" action="index.php?m=cloudflare&action=updateProSettings" class="cf-settings-form" onsubmit="return handleSettingsUpdate(this)">
                 <div class="cf-form-grid">
                     <div class="cf-form-group">
                         <label>Architecture Mode</label>
                         <select name="account_type" class="cf-select-custom" onchange="toggleByot(this.value)">
-                            <option value="managed" {if $accountType == 'managed'}selected{/if}>Managed Core</option>
-                            {if $dedicatedAvailable}<option value="dedicated" {if $accountType == 'dedicated'}selected{/if}>Dedicated Sub-Account</option>{/if}
                             <option value="byot" {if $accountType == 'byot'}selected{/if}>BYOT (Personal Token) - RECOMMENDED</option>
+                            <option value="managed" {if $accountType == 'managed'}selected{/if}>Managed Core (Shared Risk)</option>
+                            {if $dedicatedAvailable}<option value="dedicated" {if $accountType == 'dedicated'}selected{/if}>Dedicated Sub-Account</option>{/if}
                         </select>
                     </div>
                     <div id="byot-section" class="cf-form-subgrid" style="{if $accountType != 'byot'}display:none;{/if}">
@@ -155,9 +167,14 @@
                                 <span class="cf-infra-tag">{if $isPro && $accountType == 'dedicated'}DEDICATED{elseif $isPro && $accountType == 'byot'}BYOT{else}MANAGED{/if}</span>
                             </td>
                             <td style="text-align: right;">
-                                <a href="index.php?m=cloudflare&action=manage&id={$domain->id}" class="cf-btn-action-manage">
-                                    Manage <i class="fa fa-chevron-right"></i>
-                                </a>
+                                <div class="cf-domain-actions">
+                                    <button onclick="handleSync('{$domain->id}')" class="cf-btn-sync" title="Sync & Connect">
+                                        <i class="fa fa-refresh"></i>
+                                    </button>
+                                    <a href="index.php?m=cloudflare&action=manage&id={$domain->id}" class="cf-btn-action-manage">
+                                        Manage <i class="fa fa-chevron-right"></i>
+                                    </a>
+                                </div>
                             </td>
                         </tr>
                     {/foreach}
@@ -235,18 +252,66 @@ function filterDomains() {
     }
 }
 
-// Success Notification
-{if $smarty.get.success}
+function handleSync(domainId) {
     Swal.fire({
-        icon: 'success',
-        title: 'Settings Saved',
-        text: 'Your Cloudflare configuration has been updated.',
-        timer: 3000,
-        showConfirmButton: false,
-        background: '#fff',
-        iconColor: '#058a5e'
+        title: 'Connecting Domain...',
+        text: 'Checking initialization status and updating nameservers.',
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); }
     });
-{/if}
+
+    const formData = new FormData();
+    formData.append('ajax', '1');
+    formData.append('op', 'sync');
+    formData.append('id', domainId);
+
+    fetch('index.php?m=cloudflare', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Sync Successful',
+                text: data.message,
+                confirmButtonColor: '#3b82f6'
+            });
+        } else {
+            Swal.fire({
+                icon: 'error',
+                title: 'Sync Failed',
+                text: data.message
+            });
+        }
+    });
+}
+
+function showByotGuide() {
+    Swal.fire({
+        title: 'BYOT Setup Guide',
+        html: `
+            <div style="text-align: left; font-size: 14px; line-height: 1.6;">
+                <p><strong>Step 1:</strong> Create a free account at <a href="https://dash.cloudflare.com/sign-up" target="_blank">Cloudflare.com</a>.</p>
+                <p><strong>Step 2:</strong> Go to <strong>My Profile > API Tokens</strong>.</p>
+                <p><strong>Step 3:</strong> Click <strong>Create Token</strong> and use the <strong>Edit Zone DNS</strong> template.</p>
+                <p><strong>Step 4:</strong> Ensure the token has the following permissions:
+                    <ul style="margin-top: 5px;">
+                        <li>Account - Account Settings: Read</li>
+                        <li>Zone - DNS: Edit</li>
+                        <li>Zone - Zone: Edit</li>
+                        <li>Zone - Cache Purge: Edit</li>
+                    </ul>
+                </p>
+                <p><strong>Step 5:</strong> Copy the token and paste it into the API Token field below.</p>
+            </div>
+        `,
+        icon: 'info',
+        confirmButtonColor: '#3b82f6',
+        confirmButtonText: 'Got it!'
+    });
+}
 </script>
 {/literal}
 
@@ -336,6 +401,18 @@ function filterDomains() {
 
 .cf-btn-action-manage { display: inline-flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #e2e8f0; padding: 8px 18px; border-radius: 8px; font-weight: 700; font-size: 13px; color: var(--cf-dark); text-decoration: none; transition: 0.2s; }
 .cf-btn-action-manage:hover { background: var(--cf-light-gray); border-color: var(--cf-primary); color: var(--cf-primary); }
+
+.cf-btn-action-manage:hover { background: var(--cf-light-gray); border-color: var(--cf-primary); color: var(--cf-primary); }
+
+/* Additional Styles */
+.cf-notice-bar { background: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; padding: 12px 20px; margin-bottom: 30px; display: flex; align-items: center; gap: 12px; font-size: 14px; color: #92400e; }
+.cf-notice-bar i { font-size: 18px; }
+.cf-header-right { display: flex; align-items: center; gap: 10px; }
+.cf-btn-info { background: #fff; border: 1px solid #e2e8f0; padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; transition: 0.2s; }
+.cf-btn-info:hover { border-color: var(--cf-primary); color: var(--cf-primary); }
+.cf-domain-actions { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.cf-btn-sync { background: #fff; border: 1px solid #e2e8f0; padding: 8px 12px; border-radius: 8px; color: var(--cf-text-gray); cursor: pointer; transition: 0.2s; }
+.cf-btn-sync:hover { border-color: #3b82f6; color: #3b82f6; }
 
 /* Animations */
 .animate-slide-up { animation: slideUp 0.6s cubic-bezier(0.165, 0.84, 0.44, 1); }
