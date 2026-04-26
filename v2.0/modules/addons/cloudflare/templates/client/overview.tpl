@@ -349,20 +349,14 @@ function filterDomains() {
 .cf-recommended-badge { position: absolute; top: -12px; right: 20px; background: #3b82f6; color: #fff; font-size: 10px; font-weight: 800; padding: 4px 12px; border-radius: 20px; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3); }
 
 @media (max-width: 992px) {
-    .cf-dashboard-header { flex-direction: column; gap: 20px; }
-    .cf-premium-banner { flex-direction: column; text-align: center; gap: 30px; }
-    .cf-form-grid { grid-template-columns: 1fr; }
-    .cf-form-subgrid { grid-template-columns: 1fr; }
-    .cf-domain-header { flex-direction: column; gap: 20px; align-items: flex-start; }
     .cf-search-box { width: 100%; }
     .cf-stats-container { width: 100%; overflow-x: auto; padding-bottom: 10px; }
     .cf-stat-box { flex-shrink: 0; }
     .cf-guide-grid { grid-template-columns: 1fr; }
-    .cf-dashboard-table thead { display: none; }
-    .cf-dashboard-table tr { display: block; background: #fff; border: 1px solid #eee; border-radius: 12px; margin-bottom: 15px; padding: 15px; }
-    .cf-dashboard-table td { display: block; border: none; padding: 10px 0; text-align: left !important; }
-    .cf-dashboard-table td:before { content: attr(data-label); font-weight: 700; display: block; font-size: 11px; color: var(--cf-text-gray); margin-bottom: 5px; text-transform: uppercase; }
-    .cf-btn-action-manage { width: 100%; justify-content: center; }
+    
+    .cf-table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
+    .cf-dashboard-table { min-width: 700px; }
+    .cf-dashboard-table td, .cf-dashboard-table th { white-space: nowrap; }
 }
 </style>
 {/literal}

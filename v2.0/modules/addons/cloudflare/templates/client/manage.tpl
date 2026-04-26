@@ -344,11 +344,9 @@ function handleFormSubmit(form) {
 @media (max-width: 992px) {
     .cf-header { flex-direction: column; gap: 20px; align-items: flex-start; }
     .cf-grid { grid-template-columns: 1fr; }
-    .cf-table thead { display: none; }
-    .cf-table tr { display: block; border: 1px solid #eee; border-radius: 12px; margin-bottom: 15px; padding: 15px; position: relative; }
-    .cf-table td { display: block; border: none; padding: 10px 0; text-align: left !important; }
-    .cf-table td:before { content: attr(data-label); font-weight: 700; display: block; font-size: 11px; color: var(--cf-gray); margin-bottom: 5px; text-transform: uppercase; }
-    .cf-row-actions { justify-content: flex-start; }
+    .cf-table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
+    .cf-table { min-width: 800px; }
+    .cf-table td, .cf-table th { white-space: nowrap; }
     .cf-sidebar { order: -1; }
     .cf-migration-card { padding: 30px 20px; }
 }
