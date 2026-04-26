@@ -214,7 +214,10 @@ function handleOp(op, extraData = {}) {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) throw new Error("Network response was not ok");
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             Swal.fire({
@@ -238,7 +241,7 @@ function handleOp(op, extraData = {}) {
         Swal.fire({
             icon: 'error',
             title: 'System Error',
-            text: 'Could not connect to the server.'
+            text: 'An unexpected error occurred or the API is unreachable.'
         });
     });
 }

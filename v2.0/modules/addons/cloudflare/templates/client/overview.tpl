@@ -82,55 +82,54 @@
         </div>
     </div>
 
-    <!-- Dynamic Promo / Pro Settings -->
-    {if !$isPro}
-        {if $dedicatedAvailable}
-        <div class="cf-premium-banner animate-slide-up">
-            <div class="cf-premium-info">
-                <div class="cf-premium-badge"><i class="fa fa-bolt"></i> GO PRO</div>
-                <h2>Unlock Enterprise-Grade Controls</h2>
-                <p>Isolated Dedicated Account provisioning and advanced DDoS mitigation are just one click away.</p>
-            </div>
-            <div class="cf-premium-cta">
-                <a href="index.php?m=cloudflare&action=buyPro" class="cf-btn-premium">Upgrade Now <i class="fa fa-arrow-right"></i></a>
+    <!-- Architecture & Pro Settings -->
+    <div class="cf-settings-card animate-slide-up">
+        <div class="cf-card-header-gradient">
+            <h4><i class="fa fa-sliders"></i> Architecture Configuration</h4>
+            <div class="cf-header-right">
+                <button class="cf-btn-info" onclick="showByotGuide()"><i class="fa fa-question-circle"></i> Setup Guide</button>
+                {if $isPro}<span class="cf-pro-status-badge">PRO ACTIVE</span>{/if}
             </div>
         </div>
-        {/if}
-    {else}
-        <div class="cf-settings-card animate-slide-up">
-            <div class="cf-card-header-gradient">
-                <h4><i class="fa fa-sliders"></i> Pro Configuration</h4>
-                <div class="cf-header-right">
-                    <button class="cf-btn-info" onclick="showByotGuide()"><i class="fa fa-question-circle"></i> Setup Guide</button>
-                    <span class="cf-pro-status-badge">ACTIVE</span>
+        <form method="post" action="index.php?m=cloudflare&action=updateProSettings" class="cf-settings-form" onsubmit="return handleSettingsUpdate(this)">
+            <div class="cf-form-grid">
+                <div class="cf-form-group">
+                    <label>Architecture Mode</label>
+                    <select name="account_type" class="cf-select-custom" onchange="toggleByot(this.value)">
+                        <option value="byot" {if $accountType == 'byot'}selected{/if}>BYOT (Personal Token) - RECOMMENDED</option>
+                        <option value="managed" {if $accountType == 'managed'}selected{/if}>Managed Core (Shared Risk)</option>
+                        {if $isPro && $dedicatedAvailable}<option value="dedicated" {if $accountType == 'dedicated'}selected{/if}>Dedicated Sub-Account</option>{/if}
+                    </select>
                 </div>
-            </div>
-            <form method="post" action="index.php?m=cloudflare&action=updateProSettings" class="cf-settings-form" onsubmit="return handleSettingsUpdate(this)">
-                <div class="cf-form-grid">
+                <div id="byot-section" class="cf-form-subgrid" style="{if $accountType != 'byot'}display:none;{/if}">
                     <div class="cf-form-group">
-                        <label>Architecture Mode</label>
-                        <select name="account_type" class="cf-select-custom" onchange="toggleByot(this.value)">
-                            <option value="byot" {if $accountType == 'byot'}selected{/if}>BYOT (Personal Token) - RECOMMENDED</option>
-                            <option value="managed" {if $accountType == 'managed'}selected{/if}>Managed Core (Shared Risk)</option>
-                            {if $dedicatedAvailable}<option value="dedicated" {if $accountType == 'dedicated'}selected{/if}>Dedicated Sub-Account</option>{/if}
-                        </select>
+                        <label>API Token</label>
+                        <input type="password" name="api_token" value="{$apiToken}" class="cf-input-custom" placeholder="••••••••••••••••">
                     </div>
-                    <div id="byot-section" class="cf-form-subgrid" style="{if $accountType != 'byot'}display:none;{/if}">
-                        <div class="cf-form-group">
-                            <label>API Token</label>
-                            <input type="password" name="api_token" value="{$apiToken}" class="cf-input-custom" placeholder="••••••••••••••••">
-                        </div>
-                        <div class="cf-form-group">
-                            <label>Account Email</label>
-                            <input type="email" name="email" value="{$email}" class="cf-input-custom" placeholder="email@example.com">
-                        </div>
-                    </div>
-                    <div class="cf-form-group" style="display: flex; align-items: flex-end;">
-                        <button type="submit" class="cf-btn-save-settings">Save Changes</button>
+                    <div class="cf-form-group">
+                        <label>Account Email</label>
+                        <input type="email" name="email" value="{$email}" class="cf-input-custom" placeholder="email@example.com">
                     </div>
                 </div>
-            </form>
+                <div class="cf-form-group" style="display: flex; align-items: flex-end;">
+                    <button type="submit" class="cf-btn-save-settings">Save Changes</button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Dynamic Promo for Dedicated (If supported but user is not Pro) -->
+    {if !$isPro && $dedicatedAvailable}
+    <div class="cf-premium-banner animate-slide-up">
+        <div class="cf-premium-info">
+            <div class="cf-premium-badge"><i class="fa fa-bolt"></i> GO PRO</div>
+            <h2>Unlock Enterprise-Grade Controls</h2>
+            <p>Isolated Dedicated Account provisioning and advanced DDoS mitigation are just one click away.</p>
         </div>
+        <div class="cf-premium-cta">
+            <a href="index.php?m=cloudflare&action=buyPro" class="cf-btn-premium">Upgrade Now <i class="fa fa-arrow-right"></i></a>
+        </div>
+    </div>
     {/if}
 
     <!-- Domain Management Area -->
@@ -169,7 +168,7 @@
                             <td style="text-align: right;">
                                 <div class="cf-domain-actions">
                                     <button onclick="handleSync('{$domain->id}')" class="cf-btn-sync" title="Sync & Connect">
-                                        <i class="fa fa-refresh"></i>
+                                        <i class="fas fa-sync-alt"></i>
                                     </button>
                                     <a href="index.php?m=cloudflare&action=manage&id={$domain->id}" class="cf-btn-action-manage">
                                         Manage <i class="fa fa-chevron-right"></i>
@@ -269,7 +268,10 @@ function handleSync(domainId) {
         method: 'POST',
         body: formData
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) throw new Error("Network response was not ok");
+        return response.json();
+    })
     .then(data => {
         if (data.success) {
             Swal.fire({
@@ -277,6 +279,8 @@ function handleSync(domainId) {
                 title: 'Sync Successful',
                 text: data.message,
                 confirmButtonColor: '#3b82f6'
+            }).then(() => {
+                window.location.reload();
             });
         } else {
             Swal.fire({
@@ -285,6 +289,13 @@ function handleSync(domainId) {
                 text: data.message
             });
         }
+    })
+    .catch(error => {
+        Swal.fire({
+            icon: 'error',
+            title: 'System Error',
+            text: 'An unexpected error occurred or the API is unreachable.'
+        });
     });
 }
 

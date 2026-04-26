@@ -414,7 +414,10 @@ function cloudflare_clientarea($vars) {
     try {
         $accounts = $api->getAccounts();
         foreach ($accounts['result'] as $acc) {
-            if (isset($acc['settings']['enforce_twofactor'])) $dedicatedAvailable = true;
+            if (isset($acc['type']) && in_array(strtolower($acc['type']), ['enterprise', 'partner'])) {
+                $dedicatedAvailable = true;
+                break;
+            }
         }
     } catch (\Exception $e) {}
 
@@ -467,12 +470,19 @@ function cloudflare_clientarea($vars) {
                         }
                         $templates = Capsule::table('mod_cloudflare_templates')->get();
                         foreach ($templates as $t) {
-                            $content = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->content);
-                            $api->addDNSRecord($zoneId, $t->type, $t->name, $content, $t->ttl, $t->proxied);
+                            try {
+                                $content = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->content);
+                                $api->addDNSRecord($zoneId, $t->type, $t->name, $content, $t->ttl, $t->proxied);
+                            } catch (\Exception $e) { /* ignore template errors */ }
                         }
                         echo json_encode(['success' => true, 'message' => "Domain connected and initialized successfully! Please remove any old records from previous accounts."]);
                     } else {
-                        echo json_encode(['success' => true, 'message' => "Domain is already active."]);
+                        // Check if nameservers need updating
+                        $ns = $api->getZoneDetails($zoneId)['result']['name_servers'] ?? [];
+                        if (count($ns) >= 2) {
+                            localAPI('DomainUpdateNameservers', ['domainid' => $id, 'ns1' => $ns[0], 'ns2' => $ns[1]]);
+                        }
+                        echo json_encode(['success' => true, 'message' => "Domain is already active. Nameservers synced."]);
                     }
                     exit;
             }

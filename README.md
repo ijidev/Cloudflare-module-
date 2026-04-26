@@ -5,12 +5,12 @@ A high-performance, fully integrated Cloudflare provisioning and management modu
 ## Features
 
 - **Three Architecture Modes:**
-  - **Managed Core:** Domains are proxied through your master account (Free/Included tier).
-  - **Dedicated Sub-Account:** Provisions an isolated Cloudflare account using the client's email via Tenant API (Pro Tier).
-  - **BYOT:** Clients can bring their own personal Cloudflare API tokens (Pro Tier).
-- **Automated Pro Upgrades:** Instantly generates standalone upgrade invoices without needing complex WHMCS product setups.
-- **Client Dashboard:** A beautiful, SweetAlert2-powered dashboard for DNS management, Cache Purging, and Security Mode toggling.
-- **Intelligent Migration:** Detects if a domain is externally managed and guides the client through a step-by-step migration process.
+  - **BYOT (Bring Your Own Token):** Clients can bring their own personal Cloudflare API tokens (Recommended Free Tier).
+  - **Managed Core:** Domains are proxied through your master account (Free Tier - Shared Risk).
+  - **Dedicated Sub-Account:** Provisions an isolated Cloudflare account using the client's email via Tenant API (Pro Tier - Automatically hidden if admin lacks privileges).
+- **Asynchronous AJAX Dashboard:** A beautiful, responsive, SweetAlert2-powered dashboard for DNS management, Cache Purging, and Security Mode toggling. All actions execute instantly without page reloads.
+- **Intelligent Sync & Migration:** A global "Sync & Connect" button automatically initializes zones, detects conflicts, applies DNS templates, and updates WHMCS nameservers in one click. Zero-downtime automated migration when switching from Managed to BYOT.
+- **Zero-Touch Provisioning:** Includes a WHMCS `DomainAdd` hook that automatically initializes Cloudflare protection the moment a domain is registered.
 
 ---
 
