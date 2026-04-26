@@ -482,7 +482,36 @@ function cloudflare_clientarea($vars) {
                         if (count($ns) >= 2) {
                             localAPI('DomainUpdateNameservers', ['domainid' => $id, 'ns1' => $ns[0], 'ns2' => $ns[1]]);
                         }
-                        echo json_encode(['success' => true, 'message' => "Domain is already active. Nameservers synced."]);
+                        
+                        // Check for missing template records
+                        $existingRecords = $api->getDNSRecords($zoneId)['result'] ?? [];
+                        $templates = Capsule::table('mod_cloudflare_templates')->get();
+                        $addedCount = 0;
+                        
+                        foreach ($templates as $t) {
+                            $expectedName = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->name);
+                            $expectedContent = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->content);
+                            
+                            $exists = false;
+                            foreach ($existingRecords as $er) {
+                                if ($er['type'] == $t->type && $er['name'] == $expectedName) {
+                                    $exists = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!$exists) {
+                                try {
+                                    $api->addDNSRecord($zoneId, $t->type, $expectedName, $expectedContent, $t->ttl, $t->proxied);
+                                    $addedCount++;
+                                } catch (\Exception $e) {}
+                            }
+                        }
+                        
+                        $msg = "Domain is already active. Nameservers synced.";
+                        if ($addedCount > 0) $msg .= " Added {$addedCount} missing template records.";
+                        
+                        echo json_encode(['success' => true, 'message' => $msg]);
                     }
                     exit;
             }

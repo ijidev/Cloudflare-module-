@@ -253,49 +253,73 @@ function filterDomains() {
 
 function handleSync(domainId) {
     Swal.fire({
-        title: 'Connecting Domain...',
-        text: 'Checking initialization status and updating nameservers.',
-        allowOutsideClick: false,
-        didOpen: () => { Swal.showLoading(); }
-    });
-
-    const formData = new FormData();
-    formData.append('ajax', '1');
-    formData.append('op', 'sync');
-    formData.append('id', domainId);
-
-    fetch('index.php?m=cloudflare', {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => {
-        if (!response.ok) throw new Error("Network response was not ok");
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
+        title: 'Sync & Connect Domain',
+        html: `
+            <div style="text-align: left; font-size: 14px; line-height: 1.6;">
+                <p>Are you sure you want to synchronize this domain? The system will automatically perform the following actions:</p>
+                <ul style="margin-top: 10px; margin-bottom: 15px; padding-left: 20px;">
+                    <li><strong>Initialize Zone:</strong> Provision the domain on Cloudflare if not active.</li>
+                    <li><strong>DNS Records:</strong> Scan and apply any missing default DNS templates.</li>
+                    <li><strong>Nameservers:</strong> Automatically update the domain's nameservers at your registrar.</li>
+                </ul>
+                <p style="color: #ca8a04;"><strong>Note:</strong> Registrar updates may take 10-15 seconds to process, and up to 24 hours to fully propagate globally.</p>
+            </div>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3b82f6',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, Proceed with Sync',
+        cancelButtonText: 'Cancel'
+    }).then((result) => {
+        if (result.isConfirmed) {
             Swal.fire({
-                icon: 'success',
-                title: 'Sync Successful',
-                text: data.message,
-                confirmButtonColor: '#3b82f6'
-            }).then(() => {
-                window.location.reload();
+                title: 'Synchronizing...',
+                text: 'Updating nameservers and DNS templates. Please wait...',
+                allowOutsideClick: false,
+                didOpen: () => { Swal.showLoading(); }
             });
-        } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'Sync Failed',
-                text: data.message
+
+            const formData = new FormData();
+            formData.append('ajax', '1');
+            formData.append('op', 'sync');
+            formData.append('id', domainId);
+
+            fetch('index.php?m=cloudflare', {
+                method: 'POST',
+                body: formData,
+                credentials: 'same-origin'
+            })
+            .then(response => {
+                if (!response.ok) throw new Error("Network response was not ok");
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Sync Successful',
+                        text: data.message,
+                        confirmButtonColor: '#3b82f6'
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Sync Failed',
+                        text: data.message
+                    });
+                }
+            })
+            .catch(error => {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'System Error',
+                    text: 'An unexpected error occurred or the API is unreachable.'
+                });
             });
         }
-    })
-    .catch(error => {
-        Swal.fire({
-            icon: 'error',
-            title: 'System Error',
-            text: 'An unexpected error occurred or the API is unreachable.'
-        });
     });
 }
 
@@ -389,7 +413,14 @@ function showByotGuide() {
 .cf-form-grid { display: grid; grid-template-columns: 250px 1fr auto; gap: 25px; align-items: flex-end; }
 .cf-form-subgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
 .cf-form-group label { display: block; font-size: 13px; font-weight: 700; color: var(--cf-text-gray); margin-bottom: 10px; }
-.cf-select-custom, .cf-input-custom { width: 100%; padding: 12px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 14px; background: var(--cf-light-gray); }
+.cf-select-custom { 
+    width: 100%; padding: 12px 35px 12px 15px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 14px; background: var(--cf-light-gray); 
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2364748b%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
+    background-repeat: no-repeat; background-position: right 15px center; background-size: 10px auto; cursor: pointer; color: var(--cf-dark);
+}
+.cf-input-custom { width: 100%; padding: 12px 15px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 14px; background: var(--cf-light-gray); color: var(--cf-dark); }
+.cf-select-custom:focus, .cf-input-custom:focus { outline: none; border-color: var(--cf-primary); box-shadow: 0 0 0 3px rgba(243, 128, 32, 0.1); }
 .cf-btn-save-settings { background: var(--cf-dark); color: #fff; border: none; padding: 13px 25px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: 0.2s; }
 .cf-btn-save-settings:hover { background: #1e293b; }
 
