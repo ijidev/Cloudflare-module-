@@ -222,10 +222,28 @@ function cloudflare_output($vars) {
                     <input type="text" name="master_account_id" class="form-control" value="<?=$settings['master_account_id']?>" placeholder="Found in dashboard URL">
                 </div>
             </div>
+            <?php 
+            // Detect Dedicated Availability for Admin
+            $dedicatedAvailable = false;
+            if (!empty($settings['master_api_token'])) {
+                try {
+                    require_once __DIR__ . '/lib/API.php';
+                    $adminApi = new \WHMCS\Module\Addon\Cloudflare\API($settings['master_api_token'], $settings['master_email']);
+                    $accounts = $adminApi->getAccounts();
+                    foreach ($accounts['result'] as $acc) {
+                        if (isset($acc['type']) && in_array(strtolower($acc['type']), ['enterprise', 'partner'])) {
+                            $dedicatedAvailable = true;
+                            break;
+                        }
+                    }
+                } catch (\Exception $e) {}
+            }
+
+            if ($dedicatedAvailable): ?>
             <div class="row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
                 <div class="col-md-12">
                     <h4 style="margin-top:0; color:#f38020;"><i class="fa fa-shopping-cart"></i> Standalone Pro Manager</h4>
-                    <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Configure the pricing for the automated Pro Tier upgrade invoice generated when a client clicks "Upgrade Now".</p>
+                    <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Configure the pricing for the automated Pro Tier upgrade invoice generated when a client clicks "Upgrade Now". (Detected Enterprise/Partner License)</p>
                 </div>
                 <div class="col-md-4">
                     <label>Pro Upgrade Price</label>
@@ -240,6 +258,15 @@ function cloudflare_output($vars) {
                     </select>
                 </div>
             </div>
+            <?php else: ?>
+            <div class="row" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;">
+                <div class="col-md-12">
+                    <div class="alert alert-info" style="margin-bottom:0;">
+                        <i class="fa fa-info-circle"></i> <strong>Standalone Pro Manager Restricted:</strong> This feature (automated Pro invoices) is only available for Enterprise or Partner Cloudflare accounts. Your current master credentials do not report an Enterprise/Partner license.
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
             <div style="margin-top: 15px;">
                 <button type="submit" class="cf-btn-save">Save Settings</button>
             </div>

@@ -211,12 +211,12 @@ function handleOp(op, extraData = {}) {
     const formData = new FormData();
     formData.append('ajax', '1');
     formData.append('op', op);
-    formData.append('id', '{$cf_domain_id}');
+    formData.append('id', '{/literal}{$cf_domain_id}{literal}');
     for (const key in extraData) {
         formData.append(key, extraData[key]);
     }
 
-    fetch('index.php?m=cloudflare&action=manage&id={$cf_domain_id}', {
+    fetch('index.php?m=cloudflare&action=manage&id={/literal}{$cf_domain_id}{literal}', {
         method: 'POST',
         body: formData,
         credentials: 'same-origin'
