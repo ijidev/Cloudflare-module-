@@ -430,7 +430,11 @@ function cloudflare_clientarea($vars) {
         try {
             $id = (int)$_REQUEST['id'];
             $domainData = Capsule::table('tbldomains')->where('id', $id)->where('userid', $clientId)->first();
-            if (!$domainData) throw new \Exception("Domain not found.");
+            
+            if (!$domainData) {
+                throw new \Exception("Domain not found in WHMCS. (Searching for Domain ID: $id for Client ID: $clientId). Check if the domain is correctly assigned to your account.");
+            }
+            
             $domain = $domainData->domain;
             
             $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
@@ -442,7 +446,7 @@ function cloudflare_clientarea($vars) {
             
             // Check if domain initialization is needed for this operation
             if (!$zoneId && !in_array($_POST['op'], ['sync', 'migrate'])) {
-                throw new \Exception("Domain is not yet active on Cloudflare. Please initialize it first using the Sync/Migration tool.");
+                throw new \Exception("Domain '$domain' is not yet active on Cloudflare (Zone ID not found). Please initialize it first using the Sync tool.");
             }
 
             switch ($_POST['op']) {

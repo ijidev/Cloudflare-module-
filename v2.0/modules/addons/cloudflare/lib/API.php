@@ -28,18 +28,15 @@ class API
         $email = trim($this->email);
         $token = trim($this->apiToken);
 
-        // Cloudflare Global API Keys are exactly 37 characters long.
-        // Cloudflare API Tokens (Bearer) are 40 characters long.
-        $isGlobalKey = (strlen($token) === 37);
-
-        if ($isGlobalKey && !empty($email)) {
+        // Use Global API Key if email is provided, otherwise use Bearer Token.
+        if (!empty($email)) {
             $headers = [
                 'X-Auth-Email: ' . $email,
                 'X-Auth-Key: ' . $token,
                 'Content-Type: application/json',
             ];
         } else {
-            // Treat as an API Token, which uses Bearer auth and ignores the Email header
+            // Treat as an API Token, which uses Bearer auth
             $headers = [
                 'Authorization: Bearer ' . $token,
                 'Content-Type: application/json',
