@@ -61,7 +61,7 @@
                     </div>
                 </div>
                 <div class="cf-migration-footer">
-                    <button onclick="handleOp('migrate')" class="cf-btn-migrate-action">
+                    <button onclick="handleMigrate()" class="cf-btn-migrate-action">
                         <i class="fa fa-rocket"></i> Begin Migration
                     </button>
                     {if !$isPro}
@@ -78,6 +78,7 @@
                 <div class="cf-card-header">
                     <h4><i class="fa fa-list"></i> DNS Records</h4>
                     <div class="cf-header-actions">
+                        <button class="cf-btn-sync-small" onclick="handleSyncTemplates()" title="Sync Templates"><i class="fa fa-refresh"></i> Sync Templates</button>
                         <button class="cf-btn-refresh" onclick="window.location.reload()"><i class="fa fa-refresh"></i></button>
                     </div>
                 </div>
@@ -119,10 +120,15 @@
                                         <form method="post" onsubmit="return handleFormSubmit(this)">
                                             <input type="hidden" name="op" value="editRecord">
                                             <input type="hidden" name="record_id" value="{$record.id}">
+                                            <input type="hidden" name="type" value="{$record.type}">
                                             <div class="cf-edit-container">
                                                 <div class="cf-edit-fields">
                                                     <input type="text" name="name" value="{$record.name}" class="cf-input-inline" placeholder="Name">
                                                     <input type="text" name="content" value="{$record.content}" class="cf-input-inline" placeholder="Content">
+                                                    <label class="cf-proxy-toggle">
+                                                        <input type="checkbox" name="proxied" {if $record.proxied}checked{/if}>
+                                                        <span>Proxy</span>
+                                                    </label>
                                                 </div>
                                                 <div class="cf-edit-btns">
                                                     <button type="submit" class="cf-btn-save-inline">Update</button>
@@ -267,8 +273,58 @@ function handleFormSubmit(form) {
     const formData = new FormData(form);
     const data = {};
     formData.forEach((value, key) => { data[key] = value; });
+    
+    // Explicitly handle checkboxes
+    form.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        if (cb.checked) data[cb.name] = '1';
+        else delete data[cb.name];
+    });
+    
     handleOp(data.op, data);
     return false;
+}
+
+function handleMigrate() {
+    Swal.fire({
+        title: 'Begin Infrastructure Migration',
+        html: `
+            <div style="text-align: left; font-size: 14px; line-height: 1.6;">
+                <p>This will provision your domain on our premium infrastructure. The following actions will be performed:</p>
+                <ul style="margin-top: 10px; margin-bottom: 15px; padding-left: 20px;">
+                    <li><strong>Zone Creation:</strong> The domain will be added to our master account.</li>
+                    <li><strong>Template Application:</strong> All default DNS records will be created automatically.</li>
+                    <li><strong>Nameserver Update:</strong> Your domain registrar will be updated to point to our nameservers.</li>
+                </ul>
+                <p style="color: #ca8a04;"><strong>Warning:</strong> Ensure you have removed the domain from any existing Cloudflare accounts first.</p>
+            </div>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#f38020',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, Start Migration',
+        cancelButtonText: 'Cancel'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            handleOp('migrate');
+        }
+    });
+}
+
+function handleSyncTemplates() {
+    Swal.fire({
+        title: 'Sync DNS Templates?',
+        text: 'This will scan for missing default records and add them to your zone. Existing records will not be modified.',
+        icon: 'info',
+        showCancelButton: true,
+        confirmButtonColor: '#0051c3',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Sync Now'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            handleOp('sync');
+        }
+    });
 }
 
 // Handle Page Refresh Button
@@ -300,8 +356,9 @@ document.querySelector('.cf-btn-refresh').onclick = function() {
 .cf-badge-managed { background: #f1f5f9; color: #475569; }
 .cf-badge-pro { background: #fffbeb; color: #92400e; border: 1px solid #fef3c7; }
 
-.cf-btn-cache { background: #fff; border: 1px solid var(--cf-border); padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; }
-.cf-btn-cache:hover { background: #f1f5f9; border-color: var(--cf-orange); color: var(--cf-orange); }
+.cf-btn-cache, .cf-btn-sync-small { background: #fff; border: 1px solid var(--cf-border); padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+.cf-btn-cache:hover, .cf-btn-sync-small:hover { background: #f1f5f9; border-color: var(--cf-orange); color: var(--cf-orange); }
+.cf-btn-sync-small { color: var(--cf-blue); margin-right: 8px; }
 
 .cf-grid { display: grid; grid-template-columns: 1fr 300px; gap: 30px; }
 .cf-card-main { background: #fff; border: 1px solid var(--cf-border); border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
@@ -320,6 +377,9 @@ document.querySelector('.cf-btn-refresh').onclick = function() {
 .cf-btn-icon-edit, .cf-btn-icon-delete { background: none; border: none; padding: 6px; cursor: pointer; border-radius: 6px; transition: 0.2s; }
 .cf-btn-icon-edit:hover { background: #f1f5f9; color: var(--cf-blue); }
 .cf-btn-icon-delete:hover { background: #fee2e2; color: #ef4444; }
+
+.cf-proxy-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--cf-gray); cursor: pointer; margin-left: 10px; }
+.cf-proxy-toggle input { cursor: pointer; }
 
 /* NS Alert */
 .cf-ns-alert { background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid var(--cf-blue); border-radius: 12px; padding: 15px 25px; margin-bottom: 30px; display: flex; align-items: center; gap: 20px; box-shadow: var(--cf-card-shadow); }

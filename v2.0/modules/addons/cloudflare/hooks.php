@@ -88,7 +88,10 @@ add_hook('DomainAdd', 1, function($vars) {
     if (empty($dbSettings['master_api_token'])) return;
     
     require_once __DIR__ . '/lib/API.php';
+    require_once __DIR__ . '/lib/Helpers.php';
+    
     $api = new \WHMCS\Module\Addon\Cloudflare\API($dbSettings['master_api_token'], $dbSettings['master_email']);
+    $serverIp = \WHMCS\Module\Addon\Cloudflare\Helpers::getServerIp($domain);
     
     try {
         $response = $api->createZone($domain, $dbSettings['master_account_id']);
@@ -98,8 +101,9 @@ add_hook('DomainAdd', 1, function($vars) {
         // Apply DNS Templates
         $templates = Capsule::table('mod_cloudflare_templates')->get();
         foreach ($templates as $t) {
-            $content = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->content);
-            $api->addDNSRecord($zoneId, $t->type, $t->name, $content, $t->ttl, $t->proxied);
+            $expectedName = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->name);
+            $content = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->content);
+            $api->addDNSRecord($zoneId, $t->type, $expectedName, $content, $t->ttl, $t->proxied);
         }
         
         // Update Nameservers

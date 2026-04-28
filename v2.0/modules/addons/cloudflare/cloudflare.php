@@ -14,6 +14,9 @@ if (!defined("WHMCS")) {
 
 use WHMCS\Database\Capsule;
 
+require_once __DIR__ . '/lib/Helpers.php';
+use WHMCS\Module\Addon\Cloudflare\Helpers;
+
 function cloudflare_config() {
     return [
         'name' => 'Cloudflare Manager',
@@ -434,14 +437,20 @@ function cloudflare_clientarea($vars) {
             if ($clientStatus && $clientStatus->account_type == 'byot' && $clientStatus->api_token) {
                 $api = new \WHMCS\Module\Addon\Cloudflare\API($clientStatus->api_token, $clientStatus->email);
             }
+            
             $zoneId = $api->getZoneId($domain);
+            
+            // Check if domain initialization is needed for this operation
+            if (!$zoneId && !in_array($_POST['op'], ['sync', 'migrate'])) {
+                throw new \Exception("Domain is not yet active on Cloudflare. Please initialize it first using the Sync/Migration tool.");
+            }
 
             switch ($_POST['op']) {
                 case 'addRecord':
-                    $api->addDNSRecord($zoneId, $_POST['type'], $_POST['name'], $_POST['content']);
+                    $api->addDNSRecord($zoneId, $_POST['type'], $_POST['name'], $_POST['content'], 1, isset($_POST['proxied']));
                     break;
                 case 'editRecord':
-                    $api->updateDNSRecord($zoneId, $_POST['record_id'], $_POST['type'] ?: 'A', $_POST['name'], $_POST['content']);
+                    $api->updateDNSRecord($zoneId, $_POST['record_id'], $_POST['type'] ?: 'A', $_POST['name'], $_POST['content'], 1, isset($_POST['proxied']));
                     break;
                 case 'deleteRecord':
                     $api->deleteDNSRecord($zoneId, $_POST['record_id']);
@@ -459,7 +468,9 @@ function cloudflare_clientarea($vars) {
                     $details = $api->getZoneDetails($zoneId)['result'];
                     $api->pauseZone($zoneId, !$details['paused']);
                     break;
+                case 'migrate':
                 case 'sync':
+                    $serverIp = Helpers::getServerIp($domain, $clientId);
                     if (!$zoneId) {
                         $targetAccountId = ($clientStatus && $clientStatus->account_type == 'byot') ? null : $dbSettings['master_account_id'];
                         $resp = $api->createZone($domain, $targetAccountId);
@@ -471,30 +482,32 @@ function cloudflare_clientarea($vars) {
                         $templates = Capsule::table('mod_cloudflare_templates')->get();
                         foreach ($templates as $t) {
                             try {
-                                $content = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->content);
-                                $api->addDNSRecord($zoneId, $t->type, $t->name, $content, $t->ttl, $t->proxied);
+                                $expectedName = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->name);
+                                $content = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->content);
+                                $api->addDNSRecord($zoneId, $t->type, $expectedName, $content, $t->ttl, $t->proxied);
                             } catch (\Exception $e) { /* ignore template errors */ }
                         }
-                        echo json_encode(['success' => true, 'message' => "Domain connected and initialized successfully! Please remove any old records from previous accounts."]);
+                        echo json_encode(['success' => true, 'message' => "Domain connected and initialized successfully! DNS templates applied."]);
                     } else {
                         // Check if nameservers need updating
-                        $ns = $api->getZoneDetails($zoneId)['result']['name_servers'] ?? [];
+                        $details = $api->getZoneDetails($zoneId)['result'];
+                        $ns = $details['name_servers'] ?? [];
                         if (count($ns) >= 2) {
                             localAPI('DomainUpdateNameservers', ['domainid' => $id, 'ns1' => $ns[0], 'ns2' => $ns[1]]);
                         }
                         
-                        // Check for missing template records
+                        // Sync missing template records
                         $existingRecords = $api->getDNSRecords($zoneId)['result'] ?? [];
                         $templates = Capsule::table('mod_cloudflare_templates')->get();
                         $addedCount = 0;
                         
                         foreach ($templates as $t) {
-                            $expectedName = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->name);
-                            $expectedContent = str_replace(['{domain}', '{ip}'], [$domain, $_SERVER['SERVER_ADDR']], $t->content);
+                            $expectedName = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->name);
+                            $expectedContent = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->content);
                             
                             $exists = false;
                             foreach ($existingRecords as $er) {
-                                if ($er['type'] == $t->type && $er['name'] == $expectedName) {
+                                if ($er['type'] == $t->type && ($er['name'] == $expectedName || $er['name'] == $expectedName . '.' . $domain)) {
                                     $exists = true;
                                     break;
                                 }
@@ -508,9 +521,8 @@ function cloudflare_clientarea($vars) {
                             }
                         }
                         
-                        $msg = "Domain is already active. Nameservers synced.";
-                        if ($addedCount > 0) $msg .= " Added {$addedCount} missing template records.";
-                        
+                        $msg = "Domain is active. Infrastructure synced.";
+                        if ($addedCount > 0) $msg .= " Added {$addedCount} missing records.";
                         echo json_encode(['success' => true, 'message' => $msg]);
                     }
                     exit;
