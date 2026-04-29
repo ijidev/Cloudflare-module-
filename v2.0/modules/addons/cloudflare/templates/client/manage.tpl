@@ -1,6 +1,7 @@
 <!-- Load External Assets -->
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
 <div class="cf-container">
     <div class="cf-header">
@@ -78,8 +79,8 @@
                 <div class="cf-card-header">
                     <h4><i class="fa fa-list"></i> DNS Records</h4>
                     <div class="cf-header-actions">
-                        <button class="cf-btn-sync-small" onclick="handleSyncTemplates()" title="Sync Templates"><i class="fa fa-refresh"></i> Sync Templates</button>
-                        <button class="cf-btn-refresh" onclick="window.location.reload()"><i class="fa fa-refresh"></i></button>
+                        <button class="cf-btn-sync-small" onclick="handleSyncTemplates()" title="Sync DNS"><i class="fa fa-sync"></i> Sync DNS</button>
+                        <button class="cf-btn-refresh" onclick="window.location.reload()"><i class="fa fa-sync"></i></button>
                     </div>
                 </div>
                 <div class="cf-table-wrapper">
@@ -234,7 +235,16 @@ function handleOp(op, extraData = {}) {
                 timer: 2000,
                 showConfirmButton: false
             }).then(() => {
-                window.location.reload(); // Still reload on success to update table data for now, but via AJAX
+                if (op === 'sync' && data.is_parking) {
+                    Swal.fire({
+                        icon: 'info',
+                        title: 'No Hosting Detected',
+                        text: 'We noticed this domain is not yet linked to a hosting plan. We have pointed it to our default "Coming Soon" page for you.',
+                        confirmButtonText: 'Understood'
+                    }).then(() => { window.location.reload(); });
+                } else {
+                    window.location.reload();
+                }
             });
         } else {
             Swal.fire({
@@ -313,13 +323,13 @@ function handleMigrate() {
 
 function handleSyncTemplates() {
     Swal.fire({
-        title: 'Sync DNS Templates?',
-        text: 'This will scan for missing default records and add them to your zone. Existing records will not be modified.',
-        icon: 'info',
+        title: 'Sync DNS to Defaults?',
+        text: 'This will reset your DNS records to the admin predefined templates. Missing records will be added automatically.',
+        icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#0051c3',
         cancelButtonColor: '#64748b',
-        confirmButtonText: 'Sync Now'
+        confirmButtonText: 'Sync & Reset'
     }).then((result) => {
         if (result.isConfirmed) {
             handleOp('sync');

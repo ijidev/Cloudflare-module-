@@ -9,7 +9,7 @@ A high-performance, fully integrated Cloudflare provisioning and management modu
   - **Managed Core:** Domains are proxied through your master account (Free Tier - Shared Risk).
   - **Dedicated Sub-Account:** Provisions an isolated Cloudflare account using the client's email via Tenant API (Pro Tier - Automatically hidden if admin lacks privileges).
 - **Asynchronous AJAX Dashboard:** A beautiful, responsive, SweetAlert2-powered dashboard for DNS management, Cache Purging, and Security Mode toggling. All actions execute instantly without page reloads.
-- **Intelligent Sync & Migration:** A global "Sync & Connect" button automatically initializes zones, detects conflicts, applies DNS templates, and updates WHMCS nameservers in one click. Zero-downtime automated migration when switching from Managed to BYOT.
+- **Intelligent Sync & DNS Reset:** A global "Sync DNS" button automatically initializes zones, detects conflicts, applies DNS templates (using either the client's hosting IP or the admin-defined **Default Parking IP**), and updates WHMCS nameservers in one click. Zero-downtime automated migration when switching from Managed to BYOT.
 - **Zero-Touch Provisioning:** Includes a WHMCS `DomainAdd` hook that automatically initializes Cloudflare protection the moment a domain is registered.
 
 ---
@@ -30,7 +30,8 @@ A high-performance, fully integrated Cloudflare provisioning and management modu
    - **Master API Token:** Enter your Cloudflare Global API Key or API Token (Requires `Zone:Edit`, `DNS:Edit`, and `Account:Edit` permissions).
    - **Master Account ID:** Your Cloudflare Enterprise/Partner Account ID.
    - **Account Email:** The email address associated with your Cloudflare account.
-3. **Save Configuration:** Click "Save Settings". The module will automatically verify your credentials.
+4. **Default Parking IP:** Enter the IP address (e.g. your main server or a "Coming Soon" page) to be used when a client syncs a domain that has no hosting account.
+5. **Save Configuration:** Click "Save Settings". The module will automatically verify your credentials.
 
 *(Note: Pricing and Recurring billing settings are managed directly within this interface. The module automatically generates invoices for clients who click "Upgrade Now" in the client area based on these settings.)*
 

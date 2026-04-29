@@ -114,7 +114,7 @@ function cloudflare_output($vars) {
     // Handle Actions
     if ($_POST) {
         if ($action == 'save_settings') {
-            foreach (['master_api_token', 'master_email', 'master_account_id', 'pro_price', 'pro_billing_cycle'] as $setting) {
+            foreach (['master_api_token', 'master_email', 'master_account_id', 'pro_price', 'pro_billing_cycle', 'default_parking_ip'] as $setting) {
                 $exists = Capsule::table('mod_cloudflare_settings')->where('setting', $setting)->count();
                 if ($exists) {
                     Capsule::table('mod_cloudflare_settings')->where('setting', $setting)->update(['value' => $_POST[$setting]]);
@@ -220,6 +220,12 @@ function cloudflare_output($vars) {
                 <div class="col-md-4">
                     <label>Master Account ID</label>
                     <input type="text" name="master_account_id" class="form-control" value="<?=$settings['master_account_id']?>" placeholder="Found in dashboard URL">
+                </div>
+            </div>
+            <div class="row" style="margin-top: 15px;">
+                <div class="col-md-4">
+                    <label>Default Parking IP</label>
+                    <input type="text" name="default_parking_ip" class="form-control" value="<?=$settings['default_parking_ip']?>" placeholder="e.g. 1.2.3.4 (Used if no hosting found)">
                 </div>
             </div>
             <?php 
@@ -502,6 +508,9 @@ function cloudflare_clientarea($vars) {
                 case 'migrate':
                 case 'sync':
                     $serverIp = Helpers::getServerIp($domain, $clientId);
+                    $parkingIp = Capsule::table('mod_cloudflare_settings')->where('setting', 'default_parking_ip')->value('value');
+                    $isParking = ($serverIp === $parkingIp && !empty($parkingIp));
+                    
                     if (!$zoneId) {
                         $targetAccountId = ($clientStatus && $clientStatus->account_type == 'byot') ? null : $dbSettings['master_account_id'];
                         $resp = $api->createZone($domain, $targetAccountId);
@@ -518,7 +527,11 @@ function cloudflare_clientarea($vars) {
                                 $api->addDNSRecord($zoneId, $t->type, $expectedName, $content, $t->ttl, $t->proxied);
                             } catch (\Exception $e) { /* ignore template errors */ }
                         }
-                        echo json_encode(['success' => true, 'message' => "Domain connected and initialized successfully! DNS templates applied."]);
+                        echo json_encode([
+                            'success' => true, 
+                            'message' => "Domain connected and initialized successfully!",
+                            'is_parking' => $isParking
+                        ]);
                     } else {
                         // Check if nameservers need updating
                         $details = $api->getZoneDetails($zoneId)['result'];
@@ -537,8 +550,11 @@ function cloudflare_clientarea($vars) {
                             $expectedContent = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->content);
                             
                             $exists = false;
+                            $normalizedTemplateName = ($expectedName == '@' || $expectedName == $domain) ? $domain : strtolower($expectedName);
+                            
                             foreach ($existingRecords as $er) {
-                                if ($er['type'] == $t->type && ($er['name'] == $expectedName || $er['name'] == $expectedName . '.' . $domain)) {
+                                $normalizedExistingName = strtolower(rtrim($er['name'], '.'));
+                                if ($er['type'] == $t->type && ($normalizedExistingName == $normalizedTemplateName || $normalizedExistingName == $normalizedTemplateName . '.' . $domain)) {
                                     $exists = true;
                                     break;
                                 }
@@ -552,9 +568,13 @@ function cloudflare_clientarea($vars) {
                             }
                         }
                         
-                        $msg = "Domain is active. Infrastructure synced.";
+                        $msg = "Infrastructure synced.";
                         if ($addedCount > 0) $msg .= " Added {$addedCount} missing records.";
-                        echo json_encode(['success' => true, 'message' => $msg]);
+                        echo json_encode([
+                            'success' => true, 
+                            'message' => $msg,
+                            'is_parking' => $isParking
+                        ]);
                     }
                     exit;
             }

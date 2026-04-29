@@ -22,6 +22,10 @@ class Helpers {
             if ($serverIp) return $serverIp;
         }
         
+        // Final Fallback: Check for Admin Defined Parking IP
+        $parkingIp = Capsule::table('mod_cloudflare_settings')->where('setting', 'default_parking_ip')->value('value');
+        if ($parkingIp) return $parkingIp;
+
         return $_SERVER['SERVER_ADDR'] ?? '127.0.0.1';
     }
 }
