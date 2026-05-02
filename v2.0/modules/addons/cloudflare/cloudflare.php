@@ -85,6 +85,48 @@ function cloudflare_deactivate() {
 }
 
 function cloudflare_output($vars) {
+    // Self-healing Database Schema
+    try {
+        if (!Capsule::schema()->hasTable('mod_cloudflare_product_infra')) {
+            Capsule::schema()->create('mod_cloudflare_product_infra', function ($table) {
+                $table->integer('product_id')->primary();
+                $table->integer('infra_id');
+            });
+        }
+        if (!Capsule::schema()->hasTable('mod_cloudflare_infrastructure')) {
+            Capsule::schema()->create('mod_cloudflare_infrastructure', function ($table) {
+                $table->increments('id');
+                $table->integer('server_id')->default(0);
+                $table->string('name', 255);
+                $table->string('ip', 64);
+                $table->text('description')->nullable();
+            });
+        }
+        if (!Capsule::schema()->hasTable('mod_cloudflare_templates')) {
+            Capsule::schema()->create('mod_cloudflare_templates', function ($table) {
+                $table->increments('id');
+                $table->integer('infra_id');
+                $table->string('type', 10);
+                $table->string('name', 255);
+                $table->text('content');
+                $table->integer('ttl')->default(1);
+                $table->boolean('proxied')->default(true);
+            });
+        }
+        if (!Capsule::schema()->hasTable('mod_cloudflare_user_accounts')) {
+            Capsule::schema()->create('mod_cloudflare_user_accounts', function ($table) {
+                $table->increments('id');
+                $table->integer('client_id');
+                $table->string('name', 255);
+                $table->string('email', 255);
+                $table->text('api_token');
+                $table->timestamps();
+            });
+        }
+    } catch (\Exception $e) {
+        echo '<div class="alert alert-danger">Schema Error: ' . $e->getMessage() . '</div>';
+    }
+
     $action = $_REQUEST['action'] ?? 'infra';
     $modulelink = $vars['modulelink'];
 
