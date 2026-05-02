@@ -1,0 +1,235 @@
+function cloudflare_clientarea($vars) {
+    if (!isset($_SESSION['uid'])) return "Access Denied";
+    $clientId = $_SESSION['uid'];
+
+    // Ensure tables exist
+    if (!Capsule::schema()->hasTable('mod_cloudflare_client_status')) {
+        cloudflare_activate();
+    }
+
+    // Access Control Check
+    $allowedProducts = Capsule::table('mod_cloudflare_product_infra')->pluck('infra_id', 'product_id')->toArray();
+    $activeServices = Capsule::table('tblhosting')
+        ->where('userid', $clientId)
+        ->where('domainstatus', 'Active')
+        ->get();
+    
+    $hasAccess = false;
+    $clientInfraIds = [];
+    foreach ($activeServices as $service) {
+        if (isset($allowedProducts[$service->packageid])) {
+            $hasAccess = true;
+            $clientInfraIds[] = $allowedProducts[$service->packageid];
+        }
+    }
+
+    if (!$hasAccess) {
+        return '<div class="cf-admin-card" style="text-align:center; padding: 50px;">
+                    <i class="fa fa-lock" style="font-size: 48px; color: #f38020; margin-bottom: 20px;"></i>
+                    <h3>Access Restricted</h3>
+                    <p>You must have an active hosting or server plan to access the Cloudflare Manager module.</p>
+                </div>';
+    }
+
+    $action = $_REQUEST['action'] ?? 'center';
+    require_once __DIR__ . '/lib/API.php';
+    $dbSettings = Capsule::table('mod_cloudflare_settings')->pluck('value', 'setting');
+
+    // Handle Actions
+    if ($action == 'saveAccount') {
+        $accountId = (int)$_POST['account_id'];
+        $data = [
+            'client_id' => $clientId,
+            'name' => $_POST['name'],
+            'email' => $_POST['email'],
+            'api_token' => $_POST['api_token'],
+            'updated_at' => date('Y-m-d H:i:s')
+        ];
+        if ($accountId) {
+            Capsule::table('mod_cloudflare_user_accounts')->where('id', $accountId)->where('client_id', $clientId)->update($data);
+        } else {
+            $data['created_at'] = date('Y-m-d H:i:s');
+            Capsule::table('mod_cloudflare_user_accounts')->insert($data);
+        }
+        header("Location: index.php?m=cloudflare&success=account_saved");
+        exit;
+    }
+
+    if ($action == 'deleteAccount') {
+        $accountId = (int)$_POST['account_id'];
+        Capsule::table('mod_cloudflare_user_accounts')->where('id', $accountId)->where('client_id', $clientId)->delete();
+        header("Location: index.php?m=cloudflare&success=account_deleted");
+        exit;
+    }
+
+    // Handle AJAX Requests
+    if (isset($_POST['ajax']) && $_POST['ajax']) {
+        header('Content-Type: application/json');
+        try {
+            $domain = $_REQUEST['domain'];
+            $accId = (int)$_REQUEST['acc_id'];
+            $account = Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->first();
+            if (!$account) throw new \Exception("Cloudflare account not found.");
+
+            $api = new \WHMCS\Module\Addon\Cloudflare\API($account->api_token, $account->email);
+            
+            // Get associated infrastructure for this client
+            $infraId = $clientInfraIds[0] ?? 0; // Use the first active infrastructure for simplicity
+            $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
+
+            $zoneId = $api->getZoneId($domain);
+            
+            if (!$zoneId && !in_array($_POST['op'], ['sync', 'migrate'])) {
+                throw new \Exception("Domain '$domain' is not yet active on Cloudflare.");
+            }
+
+            switch ($_POST['op']) {
+                case 'addRecord':
+                    $api->addDNSRecord($zoneId, $_POST['type'], $_POST['name'], $_POST['content'], 1, isset($_POST['proxied']));
+                    break;
+                case 'editRecord':
+                    $api->updateDNSRecord($zoneId, $_POST['record_id'], $_POST['type'] ?: 'A', $_POST['name'], $_POST['content'], 1, isset($_POST['proxied']));
+                    break;
+                case 'deleteRecord':
+                    $api->deleteDNSRecord($zoneId, $_POST['record_id']);
+                    break;
+                case 'purgeCache':
+                    $api->purgeCache($zoneId);
+                    break;
+                case 'toggleSecurity':
+                    $settings = $api->getZoneSettings($zoneId)['result'];
+                    $current = 'medium';
+                    foreach ($settings as $s) { if ($s['id'] == 'security_level') $current = $s['value']; }
+                    $api->updateZoneSetting($zoneId, 'security_level', ($current == 'under_attack' ? 'medium' : 'under_attack'));
+                    break;
+                case 'togglePause':
+                    $details = $api->getZoneDetails($zoneId)['result'];
+                    $api->pauseZone($zoneId, !$details['paused']);
+                    break;
+                case 'sync':
+                    $serverIp = $_POST['custom_ip'] ?: ($infra ? $infra->ip : Helpers::getServerIp($domain, $clientId));
+                    if (!$zoneId) {
+                        $resp = $api->createZone($domain);
+                        $zoneId = $resp['result']['id'];
+                        $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
+                        foreach ($templates as $t) {
+                            try {
+                                $expectedName = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->name);
+                                $content = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->content);
+                                $api->addDNSRecord($zoneId, $t->type, $expectedName, $content, $t->ttl, $t->proxied);
+                            } catch (\Exception $e) { }
+                        }
+                        echo json_encode(['success' => true, 'message' => "Domain connected and initialized successfully!"]);
+                    } else {
+                        $existingRecords = $api->getDNSRecords($zoneId)['result'] ?? [];
+                        $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
+                        $addedCount = 0;
+                        foreach ($templates as $t) {
+                            $expectedName = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->name);
+                            $expectedContent = str_replace(['{domain}', '{ip}'], [$domain, $serverIp], $t->content);
+                            $exists = false;
+                            $normalizedTemplateName = ($expectedName == '@' || $expectedName == $domain) ? $domain : strtolower($expectedName);
+                            foreach ($existingRecords as $er) {
+                                $normalizedExistingName = strtolower(rtrim($er['name'], '.'));
+                                if ($er['type'] == $t->type && ($normalizedExistingName == $normalizedTemplateName || $normalizedExistingName == $normalizedTemplateName . '.' . $domain)) {
+                                    $exists = true; break;
+                                }
+                            }
+                            if (!$exists) {
+                                try {
+                                    $api->addDNSRecord($zoneId, $t->type, $expectedName, $expectedContent, $t->ttl, $t->proxied);
+                                    $addedCount++;
+                                } catch (\Exception $e) {}
+                            }
+                        }
+                        echo json_encode(['success' => true, 'message' => "Infrastructure synced. Added {$addedCount} records."]);
+                    }
+                    exit;
+            }
+            echo json_encode(['success' => true]);
+        } catch (\Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        }
+        exit;
+    }
+
+    if ($action == 'manage') {
+        $domain = $_REQUEST['domain'];
+        $accId = (int)$_REQUEST['acc'];
+        $account = Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->first();
+        if (!$account) return "Unauthorized or Account not found.";
+
+        $api = new \WHMCS\Module\Addon\Cloudflare\API($account->api_token, $account->email);
+        $zoneId = null;
+        try { $zoneId = $api->getZoneId($domain); } catch (\Exception $e) {}
+
+        $error = '';
+        $zoneDetails = [];
+        $dnsRecords = [];
+        $underAttack = false;
+        $nameservers = [];
+
+        if ($zoneId) {
+            try {
+                $zoneDetails = $api->getZoneDetails($zoneId)['result'] ?? [];
+                $dnsRecords = $api->getDNSRecords($zoneId)['result'] ?? [];
+                $settings = $api->getZoneSettings($zoneId)['result'] ?? [];
+                $nameservers = $zoneDetails['name_servers'] ?? [];
+                foreach ($settings as $s) {
+                    if ($s['id'] == 'security_level' && $s['value'] == 'under_attack') $underAttack = true;
+                }
+            } catch (\Exception $e) {
+                $error = "API Error: " . $e->getMessage();
+            }
+        }
+
+        return [
+            'pagetitle' => 'Cloudflare Manager - ' . $domain,
+            'templatefile' => 'templates/client/manage',
+            'vars' => [
+                'domain' => $domain,
+                'acc_id' => $accId,
+                'dnsRecords' => $dnsRecords,
+                'isPaused' => $zoneDetails['paused'] ?? false,
+                'error' => $error,
+                'needsMigration' => !$zoneId,
+                'underAttack' => $underAttack,
+                'nameservers' => $nameservers,
+                'triggerSync' => (bool)$_REQUEST['trigger_sync'],
+            ],
+        ];
+    }
+
+    // Overview Page Logic
+    $domains = Capsule::table('tbldomains')->where('userid', $clientId)->get();
+    $userAccounts = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $clientId)->get();
+    
+    $proxiedDomains = [];
+    foreach ($userAccounts as $acc) {
+        try {
+            $accApi = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
+            $zones = $accApi->getZones();
+            if (isset($zones['result'])) {
+                foreach ($zones['result'] as $zone) {
+                    $proxiedDomains[] = [
+                        'name' => $zone['name'],
+                        'status' => $zone['status'],
+                        'account_name' => $acc->name,
+                        'account_id' => $acc->id
+                    ];
+                }
+            }
+        } catch (\Exception $e) {}
+    }
+
+    return [
+        'pagetitle' => 'Cloudflare Manager',
+        'templatefile' => 'templates/client/overview',
+        'vars' => [
+            'domains' => $domains,
+            'userAccounts' => $userAccounts,
+            'proxiedDomains' => $proxiedDomains,
+            'infraIds' => $clientInfraIds,
+        ],
+    ];
+}

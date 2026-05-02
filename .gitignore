@@ -17,3 +17,6 @@ servers/cloudflare/config.php
 # Temp files
 /tmp/
 *.tmp
+
+# Showcases
+*showcase.html

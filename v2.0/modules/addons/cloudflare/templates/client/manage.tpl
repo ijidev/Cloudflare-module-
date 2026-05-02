@@ -10,8 +10,8 @@
             <span>Manager: <span class="cf-domain-name">{$domain}</span></span>
         </div>
         <div class="cf-badge-container">
-            <span class="cf-badge {if $isPro}cf-badge-pro{else}cf-badge-managed{/if}">
-                {if $isPro}<i class="fa fa-star"></i> PRO TIER{else}<i class="fa fa-shield"></i> CORE MANAGED{/if}
+            <span class="cf-badge cf-badge-managed">
+                <i class="fa fa-key"></i> BYOT ACCOUNT #{$acc_id}
             </span>
             <button onclick="handleOp('purgeCache')" class="cf-btn-cache" title="Purge Everything">
                 <i class="fa fa-bolt"></i> Purge Cache
@@ -34,47 +34,14 @@
         <div class="cf-migration-overlay">
             <div class="cf-migration-card animate-pop">
                 <div class="cf-migration-header">
-                    <div class="cf-icon-pulse"><i class="fa {if $accountType == 'byot'}fa-key{else}fa-exchange{/if}"></i></div>
-                    <h3>{if $accountType == 'byot'}Infrastructure Initialization{else}Migration Required{/if}</h3>
-                    <p>{if $accountType == 'byot'}This domain is not yet active in your personal Cloudflare account. Follow the steps below to initialize it.{else}This domain is currently managed externally. Follow the steps below to migrate it to your premium dashboard.{/if}</p>
+                    <div class="cf-icon-pulse"><i class="fa fa-rocket"></i></div>
+                    <h3>Initialize Infrastructure</h3>
+                    <p>This domain is not yet active in your personal Cloudflare account. Click below to provision the zone and apply infrastructure templates.</p>
                 </div>
-                <div class="cf-migration-body">
-                    <div class="cf-step">
-                        <div class="cf-step-num">1</div>
-                        <div class="cf-step-text">
-                            {if $accountType == 'byot'}
-                                <strong>Prepare Personal Account</strong>
-                                <p>Ensure you have added <strong>{$domain}</strong> to your personal Cloudflare dashboard, or click below to let us create it for you.</p>
-                            {else}
-                                <strong>Remove from External Cloudflare</strong>
-                                <p>Log in to your current account and remove <strong>{$domain}</strong>. This frees the domain for our infrastructure.</p>
-                            {/if}
-                        </div>
-                    </div>
-                    <div class="cf-step">
-                        <div class="cf-step-num">2</div>
-                        <div class="cf-step-text">
-                            <strong>Wait 2-3 Minutes</strong>
-                            <p>Wait for Cloudflare to update its global edge records. This ensures a seamless transition.</p>
-                        </div>
-                    </div>
-                    <div class="cf-step">
-                        <div class="cf-step-num">3</div>
-                        <div class="cf-step-text">
-                            <strong>{if $accountType == 'byot'}Initialize Token Sync{else}Initialize Managed Setup{/if}</strong>
-                            <p>Click below to provision your zone {if $accountType == 'byot'}using your API token{else}on our high-performance infrastructure{/if}.</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="cf-migration-footer">
-                    <button onclick="handleMigrate()" class="cf-btn-migrate-action">
-                        <i class="fa fa-rocket"></i> {if $accountType == 'byot'}Initialize Infrastructure{else}Begin Migration{/if}
+                <div class="cf-migration-footer" style="margin-top:30px;">
+                    <button onclick="handleOp('sync')" class="cf-btn-migrate-action">
+                        <i class="fa fa-rocket"></i> Initialize & Sync
                     </button>
-                    {if $accountType != 'byot'}
-                        <div class="cf-pro-upsell">
-                            <i class="fa fa-info-circle"></i> Prefer to use your own account? <a href="index.php?m=cloudflare">Configure BYOT</a> to manage it personally.
-                        </div>
-                    {/if}
                 </div>
             </div>
         </div>
@@ -201,6 +168,12 @@
 
 {literal}
 <script>
+window.onload = function() {
+    if ({/literal}{$triggerSync|default:0}{literal}) {
+        handleOp('sync');
+    }
+};
+
 function toggleEdit(id) {
     const row = document.getElementById('edit-row-' + id);
     row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
@@ -217,65 +190,46 @@ function handleOp(op, extraData = {}) {
     const formData = new FormData();
     formData.append('ajax', '1');
     formData.append('op', op);
-    formData.append('id', '{/literal}{$cf_domain_id}{literal}');
+    formData.append('domain', '{/literal}{$domain}{literal}');
+    formData.append('acc_id', '{/literal}{$acc_id}{literal}');
+    
     for (const key in extraData) {
         formData.append(key, extraData[key]);
     }
 
-    fetch('index.php?m=cloudflare&action=manage&id={/literal}{$cf_domain_id}{literal}', {
+    fetch('index.php?m=cloudflare', {
         method: 'POST',
         body: formData,
         credentials: 'same-origin'
     })
-    .then(response => {
-        if (!response.ok) throw new Error("Network response was not ok");
-        return response.json();
-    })
+    .then(response => response.json())
     .then(data => {
         if (data.success) {
             Swal.fire({
                 icon: 'success',
                 title: 'Action Completed',
-                text: data.message || 'The request was successful.',
+                text: data.message || 'Success!',
                 timer: 2000,
                 showConfirmButton: false
             }).then(() => {
-                if (op === 'sync' && data.is_parking) {
-                    Swal.fire({
-                        icon: 'info',
-                        title: 'No Hosting Detected',
-                        text: 'We noticed this domain is not yet linked to a hosting plan. We have pointed it to our default "Coming Soon" page for you.',
-                        confirmButtonText: 'Understood'
-                    }).then(() => { window.location.reload(); });
-                } else {
-                    window.location.reload();
-                }
+                window.location.href = 'index.php?m=cloudflare&action=manage&domain={/literal}{$domain}{literal}&acc={/literal}{$acc_id}{literal}';
             });
         } else {
-            Swal.fire({
-                icon: 'error',
-                title: 'API Error',
-                text: data.message || 'Something went wrong.'
-            });
+            Swal.fire({ icon: 'error', title: 'Error', text: data.message });
         }
     })
     .catch(error => {
-        Swal.fire({
-            icon: 'error',
-            title: 'System Error',
-            text: 'An unexpected error occurred or the API is unreachable.'
-        });
+        Swal.fire({ icon: 'error', title: 'System Error', text: 'API unreachable.' });
     });
 }
 
 function handleDelete(recordId) {
     Swal.fire({
         title: 'Delete Record?',
-        text: "This action cannot be undone on Cloudflare.",
+        text: "This action cannot be undone.",
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#ef4444',
-        cancelButtonColor: '#64748b',
         confirmButtonText: 'Yes, delete it!'
     }).then((result) => {
         if (result.isConfirmed) {
@@ -288,70 +242,30 @@ function handleFormSubmit(form) {
     const formData = new FormData(form);
     const data = {};
     formData.forEach((value, key) => { data[key] = value; });
-    
-    // Explicitly handle checkboxes
     form.querySelectorAll('input[type="checkbox"]').forEach(cb => {
         if (cb.checked) data[cb.name] = '1';
         else delete data[cb.name];
     });
-    
     handleOp(data.op, data);
     return false;
 }
 
-function handleMigrate() {
-    Swal.fire({
-        title: 'Begin Infrastructure Migration',
-        html: `
-            <div style="text-align: left; font-size: 14px; line-height: 1.6;">
-                <p>This will provision your domain on our premium infrastructure. The following actions will be performed:</p>
-                <ul style="margin-top: 10px; margin-bottom: 15px; padding-left: 20px;">
-                    <li><strong>Zone Creation:</strong> The domain will be added to our master account.</li>
-                    <li><strong>Template Application:</strong> All default DNS records will be created automatically.</li>
-                    <li><strong>Nameserver Update:</strong> Your domain registrar will be updated to point to our nameservers.</li>
-                </ul>
-                <p style="color: #ca8a04;"><strong>Warning:</strong> Ensure you have removed the domain from any existing Cloudflare accounts first.</p>
-            </div>
-        `,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#f38020',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'Yes, Start Migration',
-        cancelButtonText: 'Cancel'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            handleOp('migrate');
-        }
-    });
-}
-
 function handleSyncTemplates() {
     Swal.fire({
-        title: 'Sync DNS to Defaults?',
-        text: 'This will reset your DNS records to the admin predefined templates. Leave IP blank to auto-detect.',
+        title: 'Sync Infrastructure Templates?',
+        text: 'This will ensure all default records exist for this domain. Leave IP blank for auto-detect.',
         input: 'text',
-        inputPlaceholder: 'Optional: Custom Server IP (e.g. 1.2.3.4)',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#0051c3',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'Sync & Reset'
+        inputPlaceholder: 'Optional: Custom Server IP',
+        icon: 'info',
+        showCancelButton: true
     }).then((result) => {
         if (result.isConfirmed) {
             handleOp('sync', { custom_ip: result.value });
         }
     });
 }
-
-// Handle Page Refresh Button
-document.querySelector('.cf-btn-refresh').onclick = function() {
-    window.location.reload();
-};
 </script>
-{/literal}
 
-{literal}
 <style>
 :root {
     --cf-orange: #f38020;
@@ -371,7 +285,6 @@ document.querySelector('.cf-btn-refresh').onclick = function() {
 
 .cf-badge { padding: 6px 14px; border-radius: 30px; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
 .cf-badge-managed { background: #f1f5f9; color: #475569; }
-.cf-badge-pro { background: #fffbeb; color: #92400e; border: 1px solid #fef3c7; }
 
 .cf-btn-cache, .cf-btn-sync-small { background: #fff; border: 1px solid var(--cf-border); padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all 0.2s; }
 .cf-btn-cache:hover, .cf-btn-sync-small:hover { background: #f1f5f9; border-color: var(--cf-orange); color: var(--cf-orange); }
@@ -395,71 +308,44 @@ document.querySelector('.cf-btn-refresh').onclick = function() {
 .cf-btn-icon-edit:hover { background: #f1f5f9; color: var(--cf-blue); }
 .cf-btn-icon-delete:hover { background: #fee2e2; color: #ef4444; }
 
-.cf-proxy-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--cf-gray); cursor: pointer; margin-left: 10px; }
-.cf-proxy-toggle input { cursor: pointer; }
+.cf-edit-container { background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
+.cf-edit-fields { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.cf-input-inline { flex: 1; min-width: 150px; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; }
+.cf-proxy-toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--cf-gray); }
+.cf-edit-btns { display: flex; gap: 10px; }
+.cf-btn-save-inline { background: var(--cf-blue); color: #fff; border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
+.cf-btn-cancel-inline { background: #e2e8f0; color: var(--cf-dark); border: none; padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer; }
 
 /* NS Alert */
-.cf-ns-alert { background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid var(--cf-blue); border-radius: 12px; padding: 15px 25px; margin-bottom: 30px; display: flex; align-items: center; gap: 20px; box-shadow: var(--cf-card-shadow); }
+.cf-ns-alert { background: #fff; border: 1px solid #e2e8f0; border-left: 4px solid var(--cf-blue); border-radius: 12px; padding: 15px 25px; margin-bottom: 30px; display: flex; align-items: center; gap: 20px; }
 .cf-ns-icon { font-size: 24px; color: var(--cf-blue); }
 .cf-ns-content p { margin: 5px 0 0; color: var(--cf-gray); font-size: 14px; }
 .cf-code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-family: monospace; color: var(--cf-dark); font-weight: 600; }
 
 /* Migration UI */
-.cf-migration-overlay { padding: 60px 0; }
-.cf-migration-card { max-width: 650px; margin: 0 auto; background: #fff; border: 1px solid var(--cf-border); border-radius: 24px; padding: 48px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); text-align: center; }
-.cf-icon-pulse { width: 80px; height: 80px; background: #fff7ed; color: var(--cf-orange); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 24px; animation: pulse 2s infinite; }
-.cf-migration-header h3 { font-size: 28px; font-weight: 800; margin-bottom: 12px; }
-.cf-migration-header p { color: var(--cf-gray); font-size: 16px; line-height: 1.6; }
-.cf-migration-body { text-align: left; margin: 40px 0; }
-.cf-step { display: flex; gap: 20px; margin-bottom: 24px; }
-.cf-step-num { width: 32px; height: 32px; background: var(--cf-bg); color: var(--cf-gray); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
-.cf-step-text strong { display: block; margin-bottom: 4px; color: var(--cf-dark); }
-.cf-step-text p { margin: 0; font-size: 14px; color: var(--cf-gray); }
-.cf-btn-migrate-action { background: var(--cf-orange); color: #fff; border: none; padding: 16px 40px; border-radius: 12px; font-weight: 700; font-size: 18px; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 12px rgba(243, 128, 32, 0.3); }
-.cf-btn-migrate-action:hover { background: var(--cf-orange-dark); transform: translateY(-2px); }
-.cf-pro-upsell { margin-top: 24px; font-size: 13px; color: var(--cf-gray); }
+.cf-migration-overlay { padding: 40px 0; }
+.cf-migration-card { max-width: 550px; margin: 0 auto; background: #fff; border: 1px solid var(--cf-border); border-radius: 20px; padding: 40px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); text-align: center; }
+.cf-icon-pulse { width: 64px; height: 64px; background: #fff7ed; color: var(--cf-orange); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; margin: 0 auto 20px; }
+.cf-migration-header h3 { font-size: 24px; font-weight: 800; margin-bottom: 10px; }
+.cf-migration-header p { color: var(--cf-gray); font-size: 15px; }
+.cf-btn-migrate-action { background: var(--cf-orange); color: #fff; border: none; padding: 14px 30px; border-radius: 10px; font-weight: 700; font-size: 16px; cursor: pointer; transition: 0.2s; }
 
 /* Sidebar */
 .cf-card-side { background: #fff; border: 1px solid var(--cf-border); border-radius: 16px; margin-bottom: 24px; overflow: hidden; }
 .cf-form-side { padding: 20px; }
-.cf-input-side { width: 100%; padding: 12px; border: 1px solid var(--cf-border); border-radius: 8px; margin-bottom: 12px; font-size: 14px; }
-.cf-select-side { 
-    width: 100%; padding: 12px 35px 12px 15px; border: 1px solid var(--cf-border); border-radius: 8px; margin-bottom: 12px; font-size: 14px; 
-    appearance: none; -webkit-appearance: none; -moz-appearance: none;
-    background-color: #fff;
-    background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%2364748b%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
-    background-repeat: no-repeat; background-position: right 15px center; background-size: 10px auto; cursor: pointer; color: var(--cf-dark);
-}
-.cf-btn-add-side { width: 100%; background: var(--cf-dark); color: #fff; border: none; padding: 12px; border-radius: 8px; font-weight: 700; cursor: pointer; transition: 0.2s; }
-.cf-btn-add-side:hover { background: #1e293b; }
+.cf-input-side, .cf-select-side { width: 100%; padding: 12px; border: 1px solid var(--cf-border); border-radius: 8px; margin-bottom: 12px; font-size: 14px; }
+.cf-btn-add-side { width: 100%; background: var(--cf-dark); color: #fff; border: none; padding: 12px; border-radius: 8px; font-weight: 700; cursor: pointer; }
 
-.cf-toggles-list { padding: 12px 20px 20px; }
+.cf-toggles-list { padding: 10px 20px 20px; }
 .cf-toggle-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f5f9; }
 .cf-toggle-label strong { display: block; font-size: 14px; }
 .cf-toggle-label span { font-size: 11px; color: var(--cf-gray); }
 .cf-toggle-btn { width: 44px; height: 24px; background: #e2e8f0; border-radius: 20px; border: none; position: relative; cursor: pointer; transition: 0.3s; }
 .cf-toggle-btn.active { background: var(--cf-green); }
-.cf-toggle-knob { width: 18px; height: 18px; background: #fff; border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: 0.3s; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+.cf-toggle-knob { width: 18px; height: 18px; background: #fff; border-radius: 50%; position: absolute; top: 3px; left: 3px; transition: 0.3s; }
 .cf-toggle-btn.active .cf-toggle-knob { left: 23px; }
 
-@keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(243, 128, 32, 0.4); }
-    70% { box-shadow: 0 0 0 15px rgba(243, 128, 32, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(243, 128, 32, 0); }
-}
-.animate-pop { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-@keyframes pop {
-    0% { transform: scale(0.8); opacity: 0; }
-    100% { transform: scale(1); opacity: 1; }
-}
-@media (max-width: 992px) {
-    .cf-header { flex-direction: column; gap: 20px; align-items: flex-start; }
-    .cf-grid { grid-template-columns: 1fr; }
-    .cf-table-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
-    .cf-table { min-width: 800px; }
-    .cf-table td, .cf-table th { white-space: nowrap; }
-    .cf-sidebar { order: -1; }
-    .cf-migration-card { padding: 30px 20px; }
-}
+.animate-pop { animation: pop 0.4s ease-out; }
+@keyframes pop { 0% { transform: scale(0.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 </style>
 {/literal}
