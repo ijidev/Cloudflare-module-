@@ -85,7 +85,7 @@ function cloudflare_deactivate() {
 }
 
 function cloudflare_output($vars) {
-    // Self-healing Database Schema
+    // Self-healing Database Schema (Tables & Columns)
     try {
         if (!Capsule::schema()->hasTable('mod_cloudflare_product_infra')) {
             Capsule::schema()->create('mod_cloudflare_product_infra', function ($table) {
@@ -102,6 +102,8 @@ function cloudflare_output($vars) {
                 $table->text('description')->nullable();
             });
         }
+        
+        // Templates Table - Ensure infra_id exists
         if (!Capsule::schema()->hasTable('mod_cloudflare_templates')) {
             Capsule::schema()->create('mod_cloudflare_templates', function ($table) {
                 $table->increments('id');
@@ -112,7 +114,12 @@ function cloudflare_output($vars) {
                 $table->integer('ttl')->default(1);
                 $table->boolean('proxied')->default(true);
             });
+        } elseif (!Capsule::schema()->hasColumn('mod_cloudflare_templates', 'infra_id')) {
+            Capsule::schema()->table('mod_cloudflare_templates', function ($table) {
+                $table->integer('infra_id')->after('id');
+            });
         }
+
         if (!Capsule::schema()->hasTable('mod_cloudflare_user_accounts')) {
             Capsule::schema()->create('mod_cloudflare_user_accounts', function ($table) {
                 $table->increments('id');
@@ -124,7 +131,7 @@ function cloudflare_output($vars) {
             });
         }
     } catch (\Exception $e) {
-        echo '<div class="alert alert-danger">Schema Error: ' . $e->getMessage() . '</div>';
+        echo '<div class="alert alert-danger">Schema Update Error: ' . $e->getMessage() . '</div>';
     }
 
     $action = $_REQUEST['action'] ?? 'infra';
