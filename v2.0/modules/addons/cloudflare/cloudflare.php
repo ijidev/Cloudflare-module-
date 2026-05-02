@@ -507,7 +507,7 @@ function cloudflare_clientarea($vars) {
                     break;
                 case 'migrate':
                 case 'sync':
-                    $serverIp = Helpers::getServerIp($domain, $clientId);
+                    $serverIp = $_POST['custom_ip'] ?: Helpers::getServerIp($domain, $clientId);
                     $parkingIp = Capsule::table('mod_cloudflare_settings')->where('setting', 'default_parking_ip')->value('value');
                     $isParking = ($serverIp === $parkingIp && !empty($parkingIp));
                     
@@ -564,12 +564,19 @@ function cloudflare_clientarea($vars) {
                                 try {
                                     $api->addDNSRecord($zoneId, $t->type, $expectedName, $expectedContent, $t->ttl, $t->proxied);
                                     $addedCount++;
-                                } catch (\Exception $e) {}
+                                } catch (\Exception $e) {
+                                    // Optionally log errors or collect them to show to the user
+                                }
                             }
                         }
                         
                         $msg = "Infrastructure synced.";
-                        if ($addedCount > 0) $msg .= " Added {$addedCount} missing records.";
+                        if ($addedCount > 0) {
+                            $msg .= " Added {$addedCount} missing records.";
+                        } else {
+                            $msg .= " No new records were needed.";
+                        }
+                        
                         echo json_encode([
                             'success' => true, 
                             'message' => $msg,
@@ -587,7 +594,7 @@ function cloudflare_clientarea($vars) {
 
     if ($action == 'updateProSettings') {
         $clientStatus = Capsule::table('mod_cloudflare_client_status')->where('client_id', $clientId)->first();
-        if ($clientStatus && $clientStatus->is_pro) {
+        if ($clientStatus) {
             $oldType = $clientStatus->account_type;
             $newType = $_POST['account_type'];
             
@@ -780,6 +787,7 @@ function cloudflare_clientarea($vars) {
                 'needsMigration' => $needsMigration,
                 'underAttack' => $underAttack,
                 'nameservers' => $nameservers,
+                'accountType' => $clientStatus->account_type ?? 'managed',
             ],
         ];
     }

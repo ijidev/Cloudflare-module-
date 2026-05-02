@@ -163,7 +163,7 @@
                                 <span class="cf-status-tag tag-active">Active</span>
                             </td>
                             <td data-label="Infrastructure">
-                                <span class="cf-infra-tag">{if $isPro && $accountType == 'dedicated'}DEDICATED{elseif $isPro && $accountType == 'byot'}BYOT{else}MANAGED{/if}</span>
+                                <span class="cf-infra-tag">{if $isPro && $accountType == 'dedicated'}DEDICATED{elseif $accountType == 'byot'}BYOT{else}MANAGED{/if}</span>
                             </td>
                             <td style="text-align: right;">
                                 <div class="cf-domain-actions">
@@ -262,9 +262,11 @@ function handleSync(domainId) {
                     <li><strong>DNS Records:</strong> Scan and apply any missing default DNS templates.</li>
                     <li><strong>Nameservers:</strong> Automatically update the domain's nameservers at your registrar.</li>
                 </ul>
-                <p style="color: #ca8a04;"><strong>Note:</strong> Registrar updates may take 10-15 seconds to process, and up to 24 hours to fully propagate globally.</p>
+                <p style="color: #ca8a04;"><strong>Note:</strong> You can optionally provide a custom IP below. If left blank, we will auto-detect your server IP.</p>
             </div>
         `,
+        input: 'text',
+        inputPlaceholder: 'Optional: Custom Server IP',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#3b82f6',
@@ -284,6 +286,9 @@ function handleSync(domainId) {
             formData.append('ajax', '1');
             formData.append('op', 'sync');
             formData.append('id', domainId);
+            if (result.value) {
+                formData.append('custom_ip', result.value);
+            }
 
             fetch('index.php?m=cloudflare', {
                 method: 'POST',

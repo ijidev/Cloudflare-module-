@@ -34,16 +34,21 @@
         <div class="cf-migration-overlay">
             <div class="cf-migration-card animate-pop">
                 <div class="cf-migration-header">
-                    <div class="cf-icon-pulse"><i class="fa fa-exchange"></i></div>
-                    <h3>Migration Required</h3>
-                    <p>This domain is currently managed externally. Follow the steps below to migrate it to your premium dashboard.</p>
+                    <div class="cf-icon-pulse"><i class="fa {if $accountType == 'byot'}fa-key{else}fa-exchange{/if}"></i></div>
+                    <h3>{if $accountType == 'byot'}Infrastructure Initialization{else}Migration Required{/if}</h3>
+                    <p>{if $accountType == 'byot'}This domain is not yet active in your personal Cloudflare account. Follow the steps below to initialize it.{else}This domain is currently managed externally. Follow the steps below to migrate it to your premium dashboard.{/if}</p>
                 </div>
                 <div class="cf-migration-body">
                     <div class="cf-step">
                         <div class="cf-step-num">1</div>
                         <div class="cf-step-text">
-                            <strong>Remove from External Cloudflare</strong>
-                            <p>Log in to your current account and remove <strong>{$domain}</strong>. This frees the domain for our infrastructure.</p>
+                            {if $accountType == 'byot'}
+                                <strong>Prepare Personal Account</strong>
+                                <p>Ensure you have added <strong>{$domain}</strong> to your personal Cloudflare dashboard, or click below to let us create it for you.</p>
+                            {else}
+                                <strong>Remove from External Cloudflare</strong>
+                                <p>Log in to your current account and remove <strong>{$domain}</strong>. This frees the domain for our infrastructure.</p>
+                            {/if}
                         </div>
                     </div>
                     <div class="cf-step">
@@ -56,18 +61,18 @@
                     <div class="cf-step">
                         <div class="cf-step-num">3</div>
                         <div class="cf-step-text">
-                            <strong>Initialize Managed Setup</strong>
-                            <p>Click below to provision your zone on our high-performance infrastructure.</p>
+                            <strong>{if $accountType == 'byot'}Initialize Token Sync{else}Initialize Managed Setup{/if}</strong>
+                            <p>Click below to provision your zone {if $accountType == 'byot'}using your API token{else}on our high-performance infrastructure{/if}.</p>
                         </div>
                     </div>
                 </div>
                 <div class="cf-migration-footer">
                     <button onclick="handleMigrate()" class="cf-btn-migrate-action">
-                        <i class="fa fa-rocket"></i> Begin Migration
+                        <i class="fa fa-rocket"></i> {if $accountType == 'byot'}Initialize Infrastructure{else}Begin Migration{/if}
                     </button>
-                    {if !$isPro}
+                    {if $accountType != 'byot'}
                         <div class="cf-pro-upsell">
-                            <i class="fa fa-info-circle"></i> Don't want to migrate? <a href="index.php?m=cloudflare&action=buyPro">Upgrade to Pro</a> for BYOT support.
+                            <i class="fa fa-info-circle"></i> Prefer to use your own account? <a href="index.php?m=cloudflare">Configure BYOT</a> to manage it personally.
                         </div>
                     {/if}
                 </div>
@@ -324,7 +329,9 @@ function handleMigrate() {
 function handleSyncTemplates() {
     Swal.fire({
         title: 'Sync DNS to Defaults?',
-        text: 'This will reset your DNS records to the admin predefined templates. Missing records will be added automatically.',
+        text: 'This will reset your DNS records to the admin predefined templates. Leave IP blank to auto-detect.',
+        input: 'text',
+        inputPlaceholder: 'Optional: Custom Server IP (e.g. 1.2.3.4)',
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#0051c3',
@@ -332,7 +339,7 @@ function handleSyncTemplates() {
         confirmButtonText: 'Sync & Reset'
     }).then((result) => {
         if (result.isConfirmed) {
-            handleOp('sync');
+            handleOp('sync', { custom_ip: result.value });
         }
     });
 }
