@@ -168,8 +168,26 @@ input:checked + .cf-slider:before { transform: translateX(22px); }
 .animate-fade-in { animation: fadeIn 0.4s ease-out; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-@media (max-width: 850px) {
-    .cf-manage-grid { grid-template-columns: 1fr; }
+@media (max-width: 768px) {
+    .cf-dashboard-container { padding: 12px; }
+    .cf-dashboard-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .cf-title-text h1 { font-size: 19px; }
+    .cf-title-text p { font-size: 12px; }
+    
+    .cf-manage-grid { grid-template-columns: 1fr; gap: 15px; margin-top: 20px; }
+    
+    .cf-card-premium { padding: 16px; border-radius: 12px; }
+    .cf-card-header h3 { font-size: 15px; }
+    .cf-card-header p { font-size: 11px; margin-bottom: 10px; }
+    
+    .cf-btn-action-full, .cf-btn-danger-full { padding: 10px; font-size: 12px; border-radius: 8px; }
+    .cf-card-body { font-size: 13px; }
+    
+    .cf-switch { width: 36px; height: 18px; }
+    .cf-slider:before { height: 12px; width: 12px; left: 3px; bottom: 3px; }
+    input:checked + .cf-slider:before { transform: translateX(18px); }
+    
+    .cf-card-danger { padding: 16px; border-radius: 12px; }
 }
 </style>
 {/literal}

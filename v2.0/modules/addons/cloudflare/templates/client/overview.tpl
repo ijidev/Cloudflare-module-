@@ -91,7 +91,7 @@
                         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                             <div>
                                 <h4 style="margin:0 0 5px; font-weight:700;">{$acc->name}</h4>
-                                <span class="cf-badge" style="background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:4px; font-size:11px;">{$acc->email}</span>
+                                <span class="cf-badge" style="background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:4px; font-size:11px;">{$acc->email|default:'API Token Auth'}</span>
                             </div>
                             <form method="post" onsubmit="return confirm('Disconnect this account?')">
                                 <input type="hidden" name="action" value="deleteAccount">
@@ -103,13 +103,18 @@
                             <i class="fa fa-clock-o"></i> Linked: {$acc->created_at|date_format}
                         </div>
                     </div>
-                    {/foreach}
-                    {if count($userAccounts) == 0}
-                    <div class="cf-empty-state-card">
-                        <i class="fa fa-shield"></i>
-                        <p>No accounts linked. Add one to start managing your domains.</p>
+                    {foreachelse}
+                    <div class="cf-empty-state-container" style="grid-column: 1 / -1;">
+                        <div class="cf-empty-card">
+                            <div class="cf-empty-icon"><i class="fa fa-shield"></i></div>
+                            <h3>No Accounts Connected</h3>
+                            <p>You haven't linked any infrastructure accounts yet. Connect your first account to begin managing your edge assets.</p>
+                            <button class="cf-btn-primary" onclick="showAddAccount()" style="margin: 20px auto 0;">
+                                <i class="fa fa-plus"></i> Connect Your First Account
+                            </button>
+                        </div>
                     </div>
-                    {/if}
+                    {/foreach}
                 </div>
             </div>
 
@@ -311,15 +316,19 @@ function switchAuth(type) {
         $('#btn-global').removeClass('active');
         $('#input-token-container').show();
         $('#input-global-container').hide();
+        $('#email-field-container').hide();
+        $('#email-field').prop('required', false);
         $('#guide-step-2 h5').text('Create API Token');
-        $('#guide-step-2 p').html('Use the <strong>"Edit Zone DNS"</strong> template and ensure <strong>"All Zones"</strong> is selected.');
+        $('#guide-step-2 p').html('Go to <strong>My Profile > API Tokens</strong>. Use the "Edit Zone DNS" template and select <strong>"All Zones"</strong>.');
     } else {
         $('#btn-global').addClass('active');
         $('#btn-token').removeClass('active');
         $('#input-global-container').show();
         $('#input-token-container').hide();
-        $('#guide-step-2 h5').text('Find Global Key');
-        $('#guide-step-2 p').html('Scroll to the bottom of the API Tokens page and click <strong>"View"</strong> next to Global API Key.');
+        $('#email-field-container').show();
+        $('#email-field').prop('required', true);
+        $('#guide-step-2 h5').text('Get Global Key');
+        $('#guide-step-2 p').html('Go to <strong>My Profile > API Tokens</strong>. View your "Global API Key" at the bottom of the page.');
     }
 }
 
@@ -455,13 +464,60 @@ function deleteZone(domain, accId) {
 .cf-plan-card:hover { border-color: var(--cf-orange); transform: translateY(-5px); }
 .cf-btn-order { display: block; background: var(--cf-dark); color: #fff; text-decoration: none; padding: 10px; border-radius: 8px; font-size: 13px; font-weight: 700; margin-top: 15px; }
 
+/* Empty State Card */
+.cf-empty-card { background: #fff; border: 2px dashed var(--cf-border); border-radius: 20px; padding: 60px 40px; text-align: center; max-width: 600px; margin: 0 auto; }
+.cf-empty-icon { font-size: 48px; color: #cbd5e1; margin-bottom: 20px; }
+.cf-empty-card h3 { margin: 0 0 10px; font-weight: 800; font-size: 20px; }
+.cf-empty-card p { color: var(--cf-gray); font-size: 14px; margin: 0; line-height: 1.6; }
+
 .animate-fade-in { animation: fadeIn 0.4s ease-out; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
 
-@media (max-width: 850px) {
-    .cf-setup-container { flex-direction: column; }
-    .cf-setup-form { border-right: none; border-bottom: 1px solid var(--cf-border); }
-    .cf-dashboard-header { flex-direction: column; align-items: flex-start; gap: 20px; }
+@media (max-width: 768px) {
+    .cf-empty-card { padding: 40px 20px; border-radius: 16px; }
+    .cf-empty-icon { font-size: 36px; }
+    .cf-empty-card h3 { font-size: 18px; }
+    .cf-empty-card p { font-size: 13px; }
+    
+    .cf-dashboard-container { padding: 12px; }
+    .cf-dashboard-header { flex-direction: column; align-items: flex-start; gap: 15px; margin-bottom: 20px; }
+    .cf-title-text h1 { font-size: 19px; }
+    .cf-title-text p { font-size: 12px; }
+    .cf-logo-bg { padding: 10px; width: 42px; height: 42px; font-size: 14px; }
+    
+    .cf-stats-container { width: 100%; gap: 10px; }
+    .cf-stat-box { flex: 1; padding: 10px; }
+    .cf-stat-val { font-size: 18px; }
+    .cf-stat-lab { font-size: 9px; }
+    
+    .cf-tab-nav { gap: 6px; padding: 4px; border-radius: 10px; overflow-x: auto; white-space: nowrap; }
+    .cf-tab-btn { padding: 10px 14px; font-size: 12px; white-space: nowrap; }
+    
+    .cf-account-grid { grid-template-columns: 1fr; gap: 12px; }
+    .cf-account-card { padding: 16px; border-radius: 12px; }
+    .cf-account-card h4 { font-size: 14px; }
+    
+    .cf-setup-container { flex-direction: column; border-radius: 14px; box-shadow: 0 10px 20px rgba(0,0,0,0.05); }
+    .cf-setup-form { padding: 24px; border-right: none; border-bottom: 1px solid var(--cf-border); }
+    .cf-setup-guide { padding: 24px; }
+    
+    .cf-input { padding: 10px 14px; font-size: 13px; border-radius: 8px; }
+    .cf-form-group { margin-bottom: 15px; }
+    .cf-form-group label { font-size: 12px; margin-bottom: 6px; }
+    .cf-input-hint { font-size: 10px; }
+    
+    .cf-auth-toggle { margin-bottom: 20px; padding: 3px; }
+    .cf-toggle-btn { padding: 6px 14px; font-size: 11px; }
+    
+    .cf-guide-step { gap: 10px; margin-bottom: 20px; }
+    .cf-step-num { width: 26px; height: 26px; font-size: 10px; }
+    .cf-step-content h5 { font-size: 13px; }
+    .cf-step-content p { font-size: 12px; line-height: 1.4; }
+
+    .cf-dashboard-table th { padding: 12px 16px; font-size: 10px; }
+    .cf-dashboard-table td { padding: 12px 16px; font-size: 13px; }
+    .cf-status-tag { padding: 3px 8px; font-size: 10px; }
+    .cf-btn-manage-sm { font-size: 12px; }
 }
 </style>
 {/literal}
