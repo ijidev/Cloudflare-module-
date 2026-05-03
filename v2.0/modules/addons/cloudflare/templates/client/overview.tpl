@@ -31,12 +31,12 @@
         <!-- Top Header & Stats -->
         <div class="cf-dashboard-header">
             <div class="cf-main-title">
-                <div class="cf-logo-bg" style="background: var(--cf-orange); color: #fff; font-weight: 800; font-size: 18px; display: flex; align-items: center; justify-content: center; width: 45px; height: 45px;">
-                    DNS
+                <div class="cf-logo-bg">
+                    <img src="https://www.cloudflare.com/img/logo-cloudflare-dark.svg" alt="Cloudflare" style="height: 30px;">
                 </div>
                 <div class="cf-title-text">
                     <h1>Premium DNS</h1>
-                    <p>Manage your personal infrastructure accounts and assets.</p>
+                    <p>Manage your infrastructure accounts and assets.</p>
                 </div>
             </div>
             <div class="cf-stats-container">
@@ -313,18 +313,25 @@ function syncDomain(domain) {
 
 /* Mobile UI Polish */
 @media (max-width: 768px) {
-    .cf-dashboard-header { flex-direction: column; align-items: center; text-align: center; gap: 20px; margin-bottom: 20px; }
-    .cf-main-title { flex-direction: column; gap: 10px; }
-    .cf-title-text h1 { font-size: 21px; }
-    .cf-stats-container { width: 100%; justify-content: center; }
-    .cf-stat-box { min-width: 105px; padding: 10px; }
-    .cf-stat-val { font-size: 19px; }
-    .cf-tab-nav { overflow-x: auto; white-space: nowrap; }
-    .cf-tab-btn { padding: 10px 15px; font-size: 12px; }
+    .cf-dashboard-header { flex-direction: column; align-items: flex-start; text-align: left; gap: 15px; margin-bottom: 20px; }
+    .cf-main-title { flex-direction: row; align-items: center; gap: 12px; width: 100%; justify-content: flex-start; }
+    .cf-logo-bg { padding: 8px; border-radius: 10px; }
+    .cf-logo-bg img { height: 24px; }
+    .cf-title-text h1 { font-size: 19px; }
+    .cf-title-text p { font-size: 11px; }
+    
+    .cf-stats-container { width: 100%; justify-content: flex-start; gap: 10px; }
+    .cf-stat-box { min-width: 100px; padding: 10px; flex: 1; }
+    .cf-stat-val { font-size: 18px; }
+    
+    .cf-tab-nav { overflow-x: auto; white-space: nowrap; gap: 6px; padding: 4px; }
+    .cf-tab-btn { padding: 10px 14px; font-size: 12px; }
+    
     .cf-setup-container { flex-direction: column; }
     .cf-setup-form { padding: 25px; border-right: none; border-bottom: 1px solid var(--cf-border); }
     .cf-setup-guide { padding: 25px; }
-    .cf-content-header { flex-direction: column; align-items: center; text-align: center; gap: 15px; }
+    
+    .cf-content-header { flex-direction: column; align-items: flex-start; text-align: left; gap: 12px; }
     .cf-btn-primary { width: 100%; justify-content: center; }
 }
 
