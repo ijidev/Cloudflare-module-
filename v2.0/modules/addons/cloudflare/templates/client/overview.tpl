@@ -45,18 +45,18 @@
                     <img src="https://www.cloudflare.com/img/logo-cloudflare-dark.svg" alt="Cloudflare">
                 </div>
                 <div class="cf-title-text">
-                    <h1>Cloudflare Infrastructure</h1>
-                    <p>Manage your personal Cloudflare accounts and proxied assets.</p>
+                    <h1>Premium DNS</h1>
+                    <p>Manage your personal infrastructure accounts and proxied assets.</p>
                 </div>
             </div>
             <div class="cf-stats-container">
                 <div class="cf-stat-box">
                     <span class="cf-stat-val">{count($userAccounts)}</span>
-                    <span class="cf-stat-lab">Managed Accounts</span>
+                    <span class="cf-stat-lab">Connected Accounts</span>
                 </div>
                 <div class="cf-stat-box">
                     <span class="cf-stat-val">{count($proxiedDomains)}</span>
-                    <span class="cf-stat-lab">Proxied Assets</span>
+                    <span class="cf-stat-lab">Active Assets</span>
                 </div>
             </div>
         </div>
@@ -67,10 +67,10 @@
                 <i class="fa fa-key"></i> Managed Accounts
             </button>
             <button class="cf-tab-btn" onclick="switchTab('proxied', this)">
-                <i class="fa fa-shield"></i> Active Proxied Domains
+                <i class="fa fa-shield"></i> Active Assets
             </button>
             <button class="cf-tab-btn" onclick="switchTab('all', this)">
-                <i class="fa fa-globe"></i> All Domains
+                <i class="fa fa-globe"></i> Sync Domains
             </button>
         </div>
 
@@ -79,8 +79,8 @@
             <div id="account-list-view">
                 <div class="cf-content-header">
                     <div>
-                        <h3>Cloudflare Accounts</h3>
-                        <p>Link your Cloudflare accounts via API to manage domains and security settings.</p>
+                        <h3>Infrastructure Accounts</h3>
+                        <p>Link your accounts via API to manage domains and security settings.</p>
                     </div>
                     <button class="cf-btn-primary" onclick="showAddAccount()"><i class="fa fa-plus"></i> Add New Account</button>
                 </div>
@@ -136,12 +136,20 @@
 
                             <div class="cf-form-group">
                                 <label>Account Label</label>
-                                <input type="text" name="name" class="cf-input" placeholder="e.g. Personal Account" required>
+                                <input type="text" name="name" class="cf-input" placeholder="e.g. My Personal Account" required>
                             </div>
 
                             <div class="cf-form-group">
-                                <label>Cloudflare Email</label>
-                                <input type="email" name="email" class="cf-input" placeholder="your@email.com" required>
+                                <label>Cloudflare Account ID</label>
+                                <input type="text" name="account_id" class="cf-input" placeholder="Paste your 32-character Account ID" required>
+                                <p class="cf-input-hint"><i class="fa fa-info-circle"></i> Found on your Cloudflare dashboard sidebar.</p>
+                            </div>
+
+                            <div id="email-field-container" style="display:none; margin-bottom:20px;">
+                                <div class="cf-form-group">
+                                    <label>Cloudflare Email</label>
+                                    <input type="email" name="email" id="email-field" class="cf-input" placeholder="your@email.com">
+                                </div>
                             </div>
 
                             <div id="input-token-container">
@@ -170,8 +178,8 @@
                         <div class="cf-guide-step">
                             <div class="cf-step-num">1</div>
                             <div class="cf-step-content">
-                                <h5>Access API Dashboard</h5>
-                                <p>Login to Cloudflare and navigate to <strong>My Profile > API Tokens</strong>.</p>
+                                <h5>Locate Account ID</h5>
+                                <p>Select any domain on Cloudflare. Your <strong>Account ID</strong> is located in the right-hand sidebar under "API".</p>
                             </div>
                         </div>
 
@@ -179,15 +187,15 @@
                             <div class="cf-step-num">2</div>
                             <div class="cf-step-content" id="guide-step-2">
                                 <h5>Create API Token</h5>
-                                <p>Use the <strong>"Edit Zone DNS"</strong> template and ensure <strong>"All Zones"</strong> is selected.</p>
+                                <p>Go to <strong>My Profile > API Tokens</strong>. Use the "Edit Zone DNS" template and select <strong>"All Zones"</strong>.</p>
                             </div>
                         </div>
 
                         <div class="cf-guide-step">
                             <div class="cf-step-num">3</div>
                             <div class="cf-step-content">
-                                <h5>Authorize Platform</h5>
-                                <p>Copy the generated token and paste it into the form to finalize integration.</p>
+                                <h5>Finalize Connection</h5>
+                                <p>Paste both the <strong>Account ID</strong> and the <strong>Token</strong> into the form to finish.</p>
                             </div>
                         </div>
                     </div>
@@ -199,8 +207,8 @@
         <div id="tab-proxied" class="cf-tab-content animate-fade-in" style="display:none;">
             <div class="cf-content-header">
                 <div>
-                    <h3>Active Proxied Assets</h3>
-                    <p>Domains currently active across all your connected Cloudflare accounts.</p>
+                    <h3>Active Infrastructure Assets</h3>
+                    <p>Domains currently active across all your connected accounts.</p>
                 </div>
             </div>
             <div class="cf-table-card">
@@ -221,15 +229,12 @@
                                 <td><span class="cf-status-tag tag-active">{$p.status}</span></td>
                                 <td style="text-align:right;">
                                     <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: center;">
-                                        <a href="index.php?m=cloudflare&action=manage&domain={$p.name}&acc={$p.account_id}" class="cf-btn-manage-sm">Manage <i class="fa fa-chevron-right"></i></a>
-                                        <button class="cf-btn-del-sm" onclick="deleteZone('{$p.name}', '{$p.account_id}')" title="Delete Zone">
-                                            <i class="fa fa-trash"></i>
-                                        </button>
+                                        <a href="index.php?m=cloudflare&action=manage&domain={$p.name}&acc={$p.account_id}" class="cf-btn-manage-sm">Manage Assets <i class="fa fa-chevron-right"></i></a>
                                     </div>
                                 </td>
                             </tr>
                         {foreachelse}
-                            <tr><td colspan="4" class="text-center" style="padding:40px; color:#64748b;">No proxied domains found.</td></tr>
+                            <tr><td colspan="4" class="text-center" style="padding:40px; color:#64748b;">No active assets found.</td></tr>
                         {/foreach}
                     </tbody>
                 </table>

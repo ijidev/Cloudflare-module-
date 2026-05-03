@@ -69,7 +69,8 @@ function cloudflare_activate() {
                 $table->integer('client_id');
                 $table->string('name', 255);
                 $table->string('email', 255);
-                $table->text('api_token');
+                $table->string('api_token', 255);
+                $table->string('account_id', 255)->nullable();
                 $table->timestamps();
             });
         }
@@ -557,16 +558,18 @@ function cloudflare_clientarea($vars) {
         
         if ($postAction == 'addAccount') {
             $name = $_POST['name'];
-            $email = $_POST['email'];
+            $email = $_POST['email'] ?? null;
             $authType = $_POST['auth_type'];
             $token = ($authType == 'token') ? $_POST['api_token'] : $_POST['global_key'];
+            $accountId = $_POST['account_id'];
             
-            if ($name && $email && $token) {
+            if ($name && $token && $accountId) {
                 Capsule::table('mod_cloudflare_user_accounts')->insert([
                     'client_id' => $clientId,
                     'name' => $name,
-                    'email' => $email,
-                    'api_token' => $token, // In a production env, you should encrypt this
+                    'email' => ($authType == 'global') ? $email : null,
+                    'api_token' => $token,
+                    'account_id' => $accountId,
                     'created_at' => date('Y-m-d H:i:s'),
                     'updated_at' => date('Y-m-d H:i:s')
                 ]);
@@ -601,6 +604,27 @@ function cloudflare_clientarea($vars) {
         } catch (\Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]); exit;
         }
+    }
+
+    $action = $_GET['action'] ?? 'overview';
+
+    if ($action == 'manage') {
+        $domain = $_GET['domain'];
+        $accId = (int)$_GET['acc'];
+        $account = Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->first();
+        
+        if (!$account) {
+            header("Location: index.php?m=cloudflare&error=invalid_account"); exit;
+        }
+
+        return [
+            'templatefile' => 'templates/client/manage',
+            'vars' => [
+                'domainName' => $domain,
+                'account' => $account,
+                'companyname' => $GLOBALS['companyname']
+            ]
+        ];
     }
 
     return [
