@@ -25,10 +25,8 @@ try {
                 $table->string('account_id', 255)->nullable()->after('api_token');
             });
         }
-        // Also ensure email is nullable for modern API token auth
-        Capsule::schema()->table('mod_cloudflare_user_accounts', function($table) {
-            $table->string('email', 255)->nullable()->change();
-        });
+        // Force email to be nullable via raw SQL (more robust than ->change())
+        Capsule::statement("ALTER TABLE mod_cloudflare_user_accounts MODIFY email VARCHAR(255) NULL");
     }
 } catch (\Exception $e) {}
 
@@ -582,7 +580,7 @@ function cloudflare_clientarea($vars) {
                 Capsule::table('mod_cloudflare_user_accounts')->insert([
                     'client_id' => $clientId,
                     'name' => $name,
-                    'email' => ($authType == 'global') ? $email : null,
+                    'email' => ($authType == 'global') ? $email : '',
                     'api_token' => $token,
                     'account_id' => $accountId,
                     'created_at' => date('Y-m-d H:i:s'),
