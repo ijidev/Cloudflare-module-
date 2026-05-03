@@ -102,6 +102,12 @@ class API
         return $response['result'][0]['id'] ?? null;
     }
 
+    public function getZones()
+    {
+        $response = $this->request('zones');
+        return $response['result'] ?? [];
+    }
+
     public function getDNSRecords($zoneId)
     {
         return $this->request("zones/$zoneId/dns_records");
