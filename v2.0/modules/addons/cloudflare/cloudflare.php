@@ -371,6 +371,7 @@ function cloudflare_clientarea($vars) {
     if (!isset($_SESSION['uid'])) return "Access Denied";
     $clientId = $_SESSION['uid'];
 
+    // 1. Access Control Check
     $allowedProducts = Capsule::table('mod_cloudflare_product_infra')->pluck('infra_id', 'product_id')->toArray();
     $activeServices = Capsule::table('tblhosting')->where('userid', $clientId)->where('domainstatus', 'Active')->get();
     
@@ -384,10 +385,8 @@ function cloudflare_clientarea($vars) {
     }
 
     if (!$hasAccess) {
-        // Fetch eligible products to show the user
         $eligibleProductIds = array_keys($allowedProducts);
         $eligibleProducts = Capsule::table('tblproducts')->whereIn('id', $eligibleProductIds)->where('retired', 0)->get();
-        
         return [
             'templatefile' => 'templates/client/overview',
             'vars' => [
@@ -397,17 +396,59 @@ function cloudflare_clientarea($vars) {
         ];
     }
 
-    // Normal logic follows...
-    $action = $_REQUEST['action'] ?? 'center';
+    // 2. Data Aggregation (Multi-Account BYOT)
     require_once __DIR__ . '/lib/API.php';
-    // ...
+    $userAccounts = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $clientId)->get();
+    $proxiedDomains = [];
+    $whmcsDomains = Capsule::table('tbldomains')->where('userid', $clientId)->get();
+
+    foreach ($userAccounts as $acc) {
+        try {
+            $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
+            $zones = $api->getZones();
+            if ($zones) {
+                foreach ($zones as $z) {
+                    $proxiedDomains[] = [
+                        'name' => $z['name'],
+                        'status' => $z['status'],
+                        'account_id' => $acc->id,
+                        'account_name' => $acc->name
+                    ];
+                }
+            }
+        } catch (\Exception $e) { }
+    }
+
+    // 3. Handle AJAX Operations (Purge, Delete Zone, etc)
+    if (isset($_POST['ajax']) && $_POST['ajax'] == '1') {
+        header('Content-Type: application/json');
+        try {
+            $accId = (int)$_POST['acc_id'];
+            $domain = $_POST['domain'];
+            $acc = Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->first();
+            if (!$acc) throw new Exception("Unauthorized account.");
+
+            $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
+            $zoneId = $api->getZoneId($domain);
+
+            switch ($_POST['op']) {
+                case 'deleteZone':
+                    $api->deleteZone($zoneId);
+                    echo json_encode(['success' => true]); exit;
+            }
+        } catch (\Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]); exit;
+        }
+    }
+
     return [
         'templatefile' => 'templates/client/overview',
         'vars' => [
             'restricted' => false,
-            'domains' => Capsule::table('tbldomains')->where('userid', $clientId)->get(),
-            'userAccounts' => Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $clientId)->get(),
-            // ...
+            'userAccounts' => $userAccounts,
+            'proxiedDomains' => $proxiedDomains,
+            'domains' => $whmcsDomains,
+            'companyname' => $GLOBALS['companyname']
         ]
     ];
 }
