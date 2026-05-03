@@ -17,6 +17,21 @@ use WHMCS\Database\Capsule;
 require_once __DIR__ . '/lib/Helpers.php';
 use WHMCS\Module\Addon\Cloudflare\Helpers;
 
+// Self-healing Schema (Runs on every load to ensure DB integrity)
+try {
+    if (Capsule::schema()->hasTable('mod_cloudflare_user_accounts')) {
+        if (!Capsule::schema()->hasColumn('mod_cloudflare_user_accounts', 'account_id')) {
+            Capsule::schema()->table('mod_cloudflare_user_accounts', function($table) {
+                $table->string('account_id', 255)->nullable()->after('api_token');
+            });
+        }
+        // Also ensure email is nullable for modern API token auth
+        Capsule::schema()->table('mod_cloudflare_user_accounts', function($table) {
+            $table->string('email', 255)->nullable()->change();
+        });
+    }
+} catch (\Exception $e) {}
+
 function cloudflare_config() {
     return [
         'name' => 'Cloudflare Manager',
