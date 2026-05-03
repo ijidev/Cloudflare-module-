@@ -85,25 +85,21 @@ function cloudflare_deactivate() {
 }
 
 function cloudflare_output($vars) {
-    // Self-healing Database Schema (Tables & Columns)
+    // Self-healing Database Schema (Aggressive Check)
     try {
+        // mod_cloudflare_product_infra
         if (!Capsule::schema()->hasTable('mod_cloudflare_product_infra')) {
             Capsule::schema()->create('mod_cloudflare_product_infra', function ($table) {
                 $table->integer('product_id')->primary();
                 $table->integer('infra_id');
             });
-        }
-        if (!Capsule::schema()->hasTable('mod_cloudflare_infrastructure')) {
-            Capsule::schema()->create('mod_cloudflare_infrastructure', function ($table) {
-                $table->increments('id');
-                $table->integer('server_id')->default(0);
-                $table->string('name', 255);
-                $table->string('ip', 64);
-                $table->text('description')->nullable();
+        } elseif (!Capsule::schema()->hasColumn('mod_cloudflare_product_infra', 'infra_id')) {
+            Capsule::schema()->table('mod_cloudflare_product_infra', function ($table) {
+                $table->integer('infra_id')->after('product_id');
             });
         }
-        
-        // Templates Table - Ensure infra_id exists
+
+        // mod_cloudflare_templates
         if (!Capsule::schema()->hasTable('mod_cloudflare_templates')) {
             Capsule::schema()->create('mod_cloudflare_templates', function ($table) {
                 $table->increments('id');
@@ -120,18 +116,18 @@ function cloudflare_output($vars) {
             });
         }
 
-        if (!Capsule::schema()->hasTable('mod_cloudflare_user_accounts')) {
-            Capsule::schema()->create('mod_cloudflare_user_accounts', function ($table) {
+        // mod_cloudflare_infrastructure
+        if (!Capsule::schema()->hasTable('mod_cloudflare_infrastructure')) {
+            Capsule::schema()->create('mod_cloudflare_infrastructure', function ($table) {
                 $table->increments('id');
-                $table->integer('client_id');
+                $table->integer('server_id')->default(0);
                 $table->string('name', 255);
-                $table->string('email', 255);
-                $table->text('api_token');
-                $table->timestamps();
+                $table->string('ip', 64);
+                $table->text('description')->nullable();
             });
         }
     } catch (\Exception $e) {
-        echo '<div class="alert alert-danger">Schema Update Error: ' . $e->getMessage() . '</div>';
+        // Silently log or display if admin
     }
 
     $action = $_REQUEST['action'] ?? 'infra';
@@ -185,9 +181,21 @@ function cloudflare_output($vars) {
             header("Location: $modulelink&action=manage_infra&id=$infraId&tab=products&success=products_updated"); exit;
         }
         
+        if ($action == 'delete_infra') {
+            $id = (int)$_POST['id'];
+            Capsule::table('mod_cloudflare_infrastructure')->where('id', $id)->delete();
+            Capsule::table('mod_cloudflare_templates')->where('infra_id', $id)->delete();
+            header("Location: $modulelink&action=infra&success=infra_deleted"); exit;
+        }
+
         if ($action == 'add_template') {
             Capsule::table('mod_cloudflare_templates')->insert(['infra_id' => (int)$_POST['infra_id'], 'type' => $_POST['type'], 'name' => $_POST['name'], 'content' => $_POST['content'], 'proxied' => isset($_POST['proxied']) ? 1 : 0]);
             header("Location: " . $_SERVER['HTTP_REFERER'] . "&success=2"); exit;
+        }
+
+        if ($action == 'delete_template') {
+            Capsule::table('mod_cloudflare_templates')->where('id', (int)$_POST['id'])->delete();
+            header("Location: " . $_SERVER['HTTP_REFERER'] . "&success=3"); exit;
         }
     }
 
@@ -235,24 +243,127 @@ function cloudflare_output($vars) {
                     $tCount = Capsule::table('mod_cloudflare_templates')->where('infra_id', $i->id)->count();
                     $pCount = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $i->id)->count();
                 ?>
-                <tr><td><strong><?=$i->name?></strong></td><td><code><?=$i->ip?></code></td><td><span class="label label-info"><?=$tCount?> Records</span></td><td><span class="label label-warning"><?=$pCount?> Plans</span></td><td style="text-align:right;"><a href="<?=$modulelink?>&action=manage_infra&id=<?=$i->id?>" class="btn btn-default btn-xs">Manage</a></td></tr>
+                <tr>
+                    <td><strong><?=$i->name?></strong></td>
+                    <td><code><?=$i->ip?></code></td>
+                    <td><span class="label label-info"><?=$tCount?> Records</span></td>
+                    <td><span class="label label-warning"><?=$pCount?> Plans</span></td>
+                    <td style="text-align:right;">
+                        <a href="<?=$modulelink?>&action=manage_infra&id=<?=$i->id?>" class="btn btn-default btn-xs">Manage</a>
+                        <form method="post" action="<?=$modulelink?>&action=delete_infra" style="display:inline;" onsubmit="return confirm('Delete this infrastructure and all its templates?')">
+                            <input type="hidden" name="id" value="<?=$i->id?>">
+                            <button type="submit" class="btn btn-danger btn-xs"><i class="fa fa-trash"></i></button>
+                        </form>
+                    </td>
+                </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
     </div>
 
     <?php elseif ($action == 'manage_infra'): 
-        $id = (int)$_GET['id']; $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $id)->first();
+        $id = (int)$_GET['id']; 
+        $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $id)->first();
+        $subtab = $_GET['tab'] ?? 'templates';
     ?>
     <div class="cf-admin-card">
         <div class="cf-admin-header">
-            <h3>Cluster: <?=$infra->name?></h3>
-            <form method="post" action="<?=$modulelink?>&action=mass_sync_infra"><input type="hidden" name="infra_id" value="<?=$id?>"><button type="submit" class="btn btn-warning btn-sm">Force Sync All Domains</button></form>
+            <h3><i class="fa fa-cogs"></i> Managing Cluster: <?=$infra->name?></h3>
+            <div style="display:flex; gap:10px;">
+                <form method="post" action="<?=$modulelink?>&action=mass_sync_infra" onsubmit="return confirm('This will force-update DNS records for ALL domains on this cluster using the current templates. Proceed?')">
+                    <input type="hidden" name="infra_id" value="<?=$id?>">
+                    <button type="submit" class="btn btn-warning btn-sm"><i class="fa fa-refresh"></i> Force Sync All Domains</button>
+                </form>
+                <a href="<?=$modulelink?>&action=infra" class="btn btn-default btn-sm">Back to Overview</a>
+            </div>
         </div>
-        <!-- Templates & Products UI ... (Keep as is) -->
-        <a href="<?=$modulelink?>&action=infra" class="btn btn-default">Back</a>
+
+        <ul class="nav nav-tabs" style="margin-bottom: 20px; border-bottom: 1px solid #ddd;">
+            <li class="<?=$subtab=='templates'?'active':''?>"><a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=templates">DNS Templates</a></li>
+            <li class="<?=$subtab=='products'?'active':''?>"><a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=products">Linked Products</a></li>
+        </ul>
+
+        <?php if ($subtab == 'templates'): ?>
+            <div class="alert alert-info">
+                <i class="fa fa-info-circle"></i> Use <code>{domain}</code> for the client domain and <code>{ip}</code> for the cluster IP (<?=$infra->ip?>).
+            </div>
+            <table class="cf-table-admin">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Name</th>
+                        <th>Content</th>
+                        <th>TTL</th>
+                        <th>Proxy</th>
+                        <th style="text-align:right;">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php 
+                    $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $id)->get();
+                    foreach ($templates as $t): ?>
+                    <tr>
+                        <td><span class="label label-info"><?=$t->type?></span></td>
+                        <td><code><?=$t->name?></code></td>
+                        <td><code><?=$t->content?></code></td>
+                        <td><?=$t->ttl == 1 ? 'Auto' : $t->ttl?></td>
+                        <td><i class="fa fa-circle <?=$t->proxied?'text-success':'text-muted'?>"></i></td>
+                        <td style="text-align:right;">
+                            <form method="post" action="<?=$modulelink?>&action=delete_template" style="display:inline;">
+                                <input type="hidden" name="id" value="<?=$t->id?>">
+                                <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('Delete this template?')"><i class="fa fa-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                    <tr style="background: #fbfbfb; border-top: 2px solid #eee;">
+                        <form method="post" action="<?=$modulelink?>&action=add_template">
+                            <input type="hidden" name="infra_id" value="<?=$id?>">
+                            <td>
+                                <select name="type" class="form-control input-sm">
+                                    <option value="A">A</option>
+                                    <option value="CNAME">CNAME</option>
+                                    <option value="MX">MX</option>
+                                    <option value="TXT">TXT</option>
+                                </select>
+                            </td>
+                            <td><input type="text" name="name" class="form-control input-sm" placeholder="@ or subdomain"></td>
+                            <td><input type="text" name="content" class="form-control input-sm" placeholder="{ip} or server.com"></td>
+                            <td><input type="text" name="ttl" class="form-control input-sm" value="1" placeholder="1 = Auto"></td>
+                            <td><input type="checkbox" name="proxied" checked></td>
+                            <td style="text-align:right;"><button type="submit" class="btn btn-success btn-sm">Add Record</button></td>
+                        </form>
+                    </tr>
+                </tbody>
+            </table>
+        <?php else: 
+            $linked = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $id)->pluck('product_id')->toArray();
+            $products = Capsule::table('tblproducts')->orderBy('name', 'asc')->get();
+        ?>
+            <form method="post" action="<?=$modulelink?>&action=update_infra_products">
+                <input type="hidden" name="infra_id" value="<?=$id?>">
+                <div style="max-height: 500px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 20px; background: #fff;">
+                    <p class="text-muted" style="margin-bottom: 20px;">Select the products that belong to this infrastructure cluster. Domains using these products will be eligible for Cloudflare management.</p>
+                    <div class="row">
+                        <?php foreach ($products as $p): ?>
+                            <div class="col-md-4">
+                                <div class="checkbox" style="padding: 10px; border: 1px solid #f1f5f9; border-radius: 6px; margin-bottom: 10px; transition: 0.2s;">
+                                    <label style="cursor:pointer; display:block; width:100%;">
+                                        <input type="checkbox" name="products[]" value="<?=$p->id?>" <?=in_array($p->id, $linked)?'checked':''?>>
+                                        <strong><?=$p->name?></strong>
+                                    </label>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <div style="margin-top: 20px;">
+                    <button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> Update Product Associations</button>
+                </div>
+            </form>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
+<?php endif; ?>
     <?php
 }
 
