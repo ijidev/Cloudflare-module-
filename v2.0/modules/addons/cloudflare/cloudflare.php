@@ -133,6 +133,40 @@ function cloudflare_output($vars) {
     $action = $_REQUEST['action'] ?? 'infra';
     $modulelink = $vars['modulelink'];
 
+    // AJAX Operations (Admin)
+    if (isset($_POST['ajax']) && $_POST['ajax'] == '1') {
+        header('Content-Type: application/json');
+        try {
+            switch ($_POST['op']) {
+                case 'add_template':
+                    $id = Capsule::table('mod_cloudflare_templates')->insertGetId([
+                        'infra_id' => (int)$_POST['infra_id'],
+                        'type' => $_POST['type'],
+                        'name' => $_POST['name'],
+                        'content' => $_POST['content'],
+                        'proxied' => $_POST['proxied'] == 'true' ? 1 : 0,
+                    ]);
+                    echo json_encode(['success' => true, 'id' => $id]); exit;
+
+                case 'delete_template':
+                    Capsule::table('mod_cloudflare_templates')->where('id', (int)$_POST['id'])->delete();
+                    echo json_encode(['success' => true]); exit;
+
+                case 'update_products':
+                    $infraId = (int)$_POST['infra_id'];
+                    Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $infraId)->delete();
+                    if (isset($_POST['products']) && is_array($_POST['products'])) {
+                        foreach ($_POST['products'] as $pid) {
+                            Capsule::table('mod_cloudflare_product_infra')->insert(['product_id' => (int)$pid, 'infra_id' => $infraId]);
+                        }
+                    }
+                    echo json_encode(['success' => true]); exit;
+            }
+        } catch (\Exception $e) {
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]); exit;
+        }
+    }
+
     if ($_POST) {
         if ($action == 'add_infra') {
             $name = $_POST['name'];
@@ -171,31 +205,12 @@ function cloudflare_output($vars) {
             }
             header("Location: $modulelink&action=manage_infra&id=$infraId&success=mass_sync&count=$count"); exit;
         }
-
-        if ($action == 'update_infra_products') {
-            $infraId = (int)$_POST['infra_id'];
-            Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $infraId)->delete();
-            if (isset($_POST['products'])) {
-                foreach ($_POST['products'] as $pid) Capsule::table('mod_cloudflare_product_infra')->insert(['product_id' => (int)$pid, 'infra_id' => $infraId]);
-            }
-            header("Location: $modulelink&action=manage_infra&id=$infraId&tab=products&success=products_updated"); exit;
-        }
         
         if ($action == 'delete_infra') {
             $id = (int)$_POST['id'];
             Capsule::table('mod_cloudflare_infrastructure')->where('id', $id)->delete();
             Capsule::table('mod_cloudflare_templates')->where('infra_id', $id)->delete();
             header("Location: $modulelink&action=infra&success=infra_deleted"); exit;
-        }
-
-        if ($action == 'add_template') {
-            Capsule::table('mod_cloudflare_templates')->insert(['infra_id' => (int)$_POST['infra_id'], 'type' => $_POST['type'], 'name' => $_POST['name'], 'content' => $_POST['content'], 'proxied' => isset($_POST['proxied']) ? 1 : 0]);
-            header("Location: " . $_SERVER['HTTP_REFERER'] . "&success=2"); exit;
-        }
-
-        if ($action == 'delete_template') {
-            Capsule::table('mod_cloudflare_templates')->where('id', (int)$_POST['id'])->delete();
-            header("Location: " . $_SERVER['HTTP_REFERER'] . "&success=3"); exit;
         }
     }
 
@@ -287,7 +302,7 @@ function cloudflare_output($vars) {
             <div class="alert alert-info">
                 <i class="fa fa-info-circle"></i> Use <code>{domain}</code> for the client domain and <code>{ip}</code> for the cluster IP (<?=$infra->ip?>).
             </div>
-            <table class="cf-table-admin">
+            <table class="cf-table-admin" id="templateTable">
                 <thead>
                     <tr>
                         <th>Type</th>
@@ -302,52 +317,68 @@ function cloudflare_output($vars) {
                     <?php 
                     $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $id)->get();
                     foreach ($templates as $t): ?>
-                    <tr>
+                    <tr id="tmpl-<?=$t->id?>">
                         <td><span class="label label-info"><?=$t->type?></span></td>
                         <td><code><?=$t->name?></code></td>
                         <td><code><?=$t->content?></code></td>
                         <td><?=$t->ttl == 1 ? 'Auto' : $t->ttl?></td>
                         <td><i class="fa fa-circle <?=$t->proxied?'text-success':'text-muted'?>"></i></td>
                         <td style="text-align:right;">
-                            <form method="post" action="<?=$modulelink?>&action=delete_template" style="display:inline;">
-                                <input type="hidden" name="id" value="<?=$t->id?>">
-                                <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('Delete this template?')"><i class="fa fa-trash"></i></button>
-                            </form>
+                            <button type="button" class="btn btn-danger btn-xs" onclick="deleteTemplate(<?=$t->id?>)"><i class="fa fa-trash"></i></button>
                         </td>
                     </tr>
                     <?php endforeach; ?>
                     <tr style="background: #fbfbfb; border-top: 2px solid #eee;">
-                        <form method="post" action="<?=$modulelink?>&action=add_template">
-                            <input type="hidden" name="infra_id" value="<?=$id?>">
-                            <td>
-                                <select name="type" class="form-control input-sm">
-                                    <option value="A">A</option>
-                                    <option value="CNAME">CNAME</option>
-                                    <option value="MX">MX</option>
-                                    <option value="TXT">TXT</option>
-                                </select>
-                            </td>
-                            <td><input type="text" name="name" class="form-control input-sm" placeholder="@ or subdomain"></td>
-                            <td><input type="text" name="content" class="form-control input-sm" placeholder="{ip} or server.com"></td>
-                            <td><input type="text" name="ttl" class="form-control input-sm" value="1" placeholder="1 = Auto"></td>
-                            <td><input type="checkbox" name="proxied" checked></td>
-                            <td style="text-align:right;"><button type="submit" class="btn btn-success btn-sm">Add Record</button></td>
-                        </form>
+                        <td>
+                            <select id="new-type" class="form-control input-sm">
+                                <option value="A">A</option>
+                                <option value="CNAME">CNAME</option>
+                                <option value="MX">MX</option>
+                                <option value="TXT">TXT</option>
+                            </select>
+                        </td>
+                        <td><input type="text" id="new-name" class="form-control input-sm" placeholder="@ or subdomain"></td>
+                        <td><input type="text" id="new-content" class="form-control input-sm" placeholder="{ip} or server.com"></td>
+                        <td><input type="text" id="new-ttl" class="form-control input-sm" value="1"></td>
+                        <td><input type="checkbox" id="new-proxied" checked></td>
+                        <td style="text-align:right;"><button type="button" class="btn btn-success btn-sm" onclick="addTemplate()">Add Record</button></td>
                     </tr>
                 </tbody>
             </table>
+            <script>
+                function addTemplate() {
+                    const data = {
+                        ajax: '1', op: 'add_template', infra_id: '<?=$id?>',
+                        type: $('#new-type').val(), name: $('#new-name').val(),
+                        content: $('#new-content').val(), ttl: $('#new-ttl').val(),
+                        proxied: $('#new-proxied').is(':checked')
+                    };
+                    $.post('<?=$modulelink?>', data, function(res) {
+                        if (res.success) location.reload(); // Simple reload to the same tab is cleaner for now
+                        else alert('Error: ' + res.message);
+                    });
+                }
+                function deleteTemplate(id) {
+                    if (!confirm('Delete this template?')) return;
+                    $.post('<?=$modulelink?>', { ajax: '1', op: 'delete_template', id: id }, function(res) {
+                        if (res.success) $('#tmpl-' + id).remove();
+                    });
+                }
+            </script>
         <?php else: 
             $linked = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $id)->pluck('product_id')->toArray();
             $products = Capsule::table('tblproducts')->orderBy('name', 'asc')->get();
         ?>
-            <form method="post" action="<?=$modulelink?>&action=update_infra_products">
+            <form id="productForm">
                 <input type="hidden" name="infra_id" value="<?=$id?>">
+                <input type="hidden" name="ajax" value="1">
+                <input type="hidden" name="op" value="update_products">
                 <div style="max-height: 500px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 20px; background: #fff;">
-                    <p class="text-muted" style="margin-bottom: 20px;">Select the products that belong to this infrastructure cluster. Domains using these products will be eligible for Cloudflare management.</p>
+                    <p class="text-muted" style="margin-bottom: 20px;">Select the products that belong to this infrastructure cluster.</p>
                     <div class="row">
                         <?php foreach ($products as $p): ?>
                             <div class="col-md-4">
-                                <div class="checkbox" style="padding: 10px; border: 1px solid #f1f5f9; border-radius: 6px; margin-bottom: 10px; transition: 0.2s;">
+                                <div class="checkbox" style="padding: 10px; border: 1px solid #f1f5f9; border-radius: 6px; margin-bottom: 10px;">
                                     <label style="cursor:pointer; display:block; width:100%;">
                                         <input type="checkbox" name="products[]" value="<?=$p->id?>" <?=in_array($p->id, $linked)?'checked':''?>>
                                         <strong><?=$p->name?></strong>
@@ -358,9 +389,22 @@ function cloudflare_output($vars) {
                     </div>
                 </div>
                 <div style="margin-top: 20px;">
-                    <button type="submit" class="btn btn-primary"><i class="fa fa-save"></i> Update Product Associations</button>
+                    <button type="button" class="btn btn-primary" onclick="saveProducts()"><i class="fa fa-save"></i> Save Changes</button>
+                    <span id="saveStatus" style="margin-left: 15px; display:none;"><i class="fa fa-check text-success"></i> Saved!</span>
                 </div>
             </form>
+            <script>
+                function saveProducts() {
+                    const btn = $('#productForm button');
+                    btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving...');
+                    $.post('<?=$modulelink?>', $('#productForm').serialize(), function(res) {
+                        btn.prop('disabled', false).html('<i class="fa fa-save"></i> Save Changes');
+                        if (res.success) {
+                            $('#saveStatus').fadeIn().delay(2000).fadeOut();
+                        }
+                    });
+                }
+            </script>
         <?php endif; ?>
     </div>
 <?php endif; ?>
