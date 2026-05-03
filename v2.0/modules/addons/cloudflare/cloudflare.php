@@ -212,6 +212,46 @@ function cloudflare_output($vars) {
             Capsule::table('mod_cloudflare_templates')->where('infra_id', $id)->delete();
             header("Location: $modulelink&action=infra&success=infra_deleted"); exit;
         }
+
+        if ($action == 'add_template') {
+            Capsule::table('mod_cloudflare_templates')->insert([
+                'infra_id' => (int)$_POST['infra_id'],
+                'type' => $_POST['type'],
+                'name' => $_POST['name'],
+                'content' => $_POST['content'],
+                'ttl' => (int)$_POST['ttl'],
+                'proxied' => isset($_POST['proxied']) ? 1 : 0
+            ]);
+            header("Location: $modulelink&action=manage_infra&id=" . $_POST['infra_id'] . "&tab=templates&success=1"); exit;
+        }
+
+        if ($action == 'update_template') {
+            Capsule::table('mod_cloudflare_templates')->where('id', (int)$_POST['id'])->update([
+                'type' => $_POST['type'],
+                'name' => $_POST['name'],
+                'content' => $_POST['content'],
+                'ttl' => (int)$_POST['ttl'],
+                'proxied' => isset($_POST['proxied']) ? 1 : 0
+            ]);
+            header("Location: $modulelink&action=manage_infra&id=" . $_POST['infra_id'] . "&tab=templates&success=1"); exit;
+        }
+
+        if ($action == 'delete_template') {
+            $t = Capsule::table('mod_cloudflare_templates')->where('id', (int)$_POST['id'])->first();
+            Capsule::table('mod_cloudflare_templates')->where('id', (int)$_POST['id'])->delete();
+            header("Location: $modulelink&action=manage_infra&id=" . $t->infra_id . "&tab=templates&success=1"); exit;
+        }
+
+        if ($action == 'update_infra_products') {
+            $infraId = (int)$_POST['infra_id'];
+            Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $infraId)->delete();
+            if (isset($_POST['products']) && is_array($_POST['products'])) {
+                foreach ($_POST['products'] as $pid) {
+                    Capsule::table('mod_cloudflare_product_infra')->insert(['product_id' => (int)$pid, 'infra_id' => $infraId]);
+                }
+            }
+            header("Location: $modulelink&action=manage_infra&id=$infraId&tab=products&success=1"); exit;
+        }
     }
 
     // Admin UI
@@ -297,12 +337,11 @@ function cloudflare_output($vars) {
             <li class="<?=$subtab=='templates'?'active':''?>"><a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=templates">DNS Templates</a></li>
             <li class="<?=$subtab=='products'?'active':''?>"><a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=products">Linked Products</a></li>
         </ul>
-
         <?php if ($subtab == 'templates'): ?>
             <div class="alert alert-info">
                 <i class="fa fa-info-circle"></i> Use <code>{domain}</code> for the client domain and <code>{ip}</code> for the cluster IP (<?=$infra->ip?>).
             </div>
-            <table class="cf-table-admin" id="templateTable">
+            <table class="cf-table-admin">
                 <thead>
                     <tr>
                         <th>Type</th>
@@ -310,10 +349,10 @@ function cloudflare_output($vars) {
                         <th>Content</th>
                         <th>TTL</th>
                         <th>Proxy</th>
-                        <th style="text-align:right;">Action</th>
+                        <th style="text-align:right;">Actions</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="tmpl-list">
                     <?php 
                     $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $id)->get();
                     foreach ($templates as $t): ?>
@@ -324,29 +363,54 @@ function cloudflare_output($vars) {
                         <td><?=$t->ttl == 1 ? 'Auto' : $t->ttl?></td>
                         <td><i class="fa fa-circle <?=$t->proxied?'text-success':'text-muted'?>"></i></td>
                         <td style="text-align:right;">
-                            <button type="button" class="btn btn-danger btn-xs" onclick="deleteTemplate(<?=$t->id?>)"><i class="fa fa-trash"></i></button>
+                            <button type="button" class="btn btn-default btn-xs" onclick="openEditModal(<?=htmlspecialchars(json_encode($t))?>)"><i class="fa fa-edit"></i> Edit</button>
+                            <button type="button" class="btn btn-danger btn-xs" id="btn-del-<?=$t->id?>" onclick="deleteTemplate(<?=$t->id?>)"><i class="fa fa-trash"></i></button>
                         </td>
                     </tr>
                     <?php endforeach; ?>
                     <tr style="background: #fbfbfb; border-top: 2px solid #eee;">
-                        <td>
-                            <select id="new-type" class="form-control input-sm">
-                                <option value="A">A</option>
-                                <option value="CNAME">CNAME</option>
-                                <option value="MX">MX</option>
-                                <option value="TXT">TXT</option>
-                            </select>
-                        </td>
-                        <td><input type="text" id="new-name" class="form-control input-sm" placeholder="@ or subdomain"></td>
-                        <td><input type="text" id="new-content" class="form-control input-sm" placeholder="{ip} or server.com"></td>
+                        <td><select id="new-type" class="form-control input-sm"><option value="A">A</option><option value="CNAME">CNAME</option><option value="MX">MX</option><option value="TXT">TXT</option></select></td>
+                        <td><input type="text" id="new-name" class="form-control input-sm" placeholder="@"></td>
+                        <td><input type="text" id="new-content" class="form-control input-sm" placeholder="{ip}"></td>
                         <td><input type="text" id="new-ttl" class="form-control input-sm" value="1"></td>
                         <td><input type="checkbox" id="new-proxied" checked></td>
-                        <td style="text-align:right;"><button type="button" class="btn btn-success btn-sm" onclick="addTemplate()">Add Record</button></td>
+                        <td style="text-align:right;">
+                            <button type="button" id="btnAddTmpl" class="btn btn-success btn-sm" onclick="addTemplate()"><i class="fa fa-plus"></i> Add Record</button>
+                        </td>
                     </tr>
                 </tbody>
             </table>
+
+            <!-- Edit Modal -->
+            <div id="editTmplModal" class="modal fade" role="dialog">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <button type="button" class="close" data-dismiss="modal">&times;</button>
+                            <h4 class="modal-title">Edit DNS Template</h4>
+                        </div>
+                        <div class="modal-body">
+                            <input type="hidden" id="edit-id">
+                            <div class="form-group"><label>Type</label><select id="edit-type" class="form-control"><option value="A">A</option><option value="CNAME">CNAME</option><option value="MX">MX</option><option value="TXT">TXT</option></select></div>
+                            <div class="form-group"><label>Name</label><input type="text" id="edit-name" class="form-control"></div>
+                            <div class="form-group"><label>Content</label><input type="text" id="edit-content" class="form-control"></div>
+                            <div class="form-group"><label>TTL</label><input type="text" id="edit-ttl" class="form-control"></div>
+                            <div class="form-group"><label><input type="checkbox" id="edit-proxied"> Cloudflare Proxy</label></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" id="btnSaveTmpl" class="btn btn-primary" onclick="saveTemplate()">Save Changes</button>
+                            <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <script>
                 function addTemplate() {
+                    const btn = $('#btnAddTmpl');
+                    const originalHtml = btn.html();
+                    btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving...');
+                    
                     const data = {
                         ajax: '1', op: 'add_template', infra_id: '<?=$id?>',
                         type: $('#new-type').val(), name: $('#new-name').val(),
@@ -354,12 +418,36 @@ function cloudflare_output($vars) {
                         proxied: $('#new-proxied').is(':checked')
                     };
                     $.post('<?=$modulelink?>', data, function(res) {
-                        if (res.success) location.reload(); // Simple reload to the same tab is cleaner for now
+                        btn.prop('disabled', false).html(originalHtml);
+                        if (res.success) location.reload();
+                        else alert('Error: ' + res.message);
+                    });
+                }
+                function openEditModal(data) {
+                    $('#edit-id').val(data.id); $('#edit-type').val(data.type);
+                    $('#edit-name').val(data.name); $('#edit-content').val(data.content);
+                    $('#edit-ttl').val(data.ttl); $('#edit-proxied').prop('checked', data.proxied == 1);
+                    $('#editTmplModal').modal('show');
+                }
+                function saveTemplate() {
+                    const btn = $('#btnSaveTmpl');
+                    btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving...');
+                    const data = {
+                        ajax: '1', op: 'update_template', id: $('#edit-id').val(), infra_id: '<?=$id?>',
+                        type: $('#edit-type').val(), name: $('#edit-name').val(),
+                        content: $('#edit-content').val(), ttl: $('#edit-ttl').val(),
+                        proxied: $('#edit-proxied').is(':checked')
+                    };
+                    $.post('<?=$modulelink?>', data, function(res) {
+                        btn.prop('disabled', false).html('Save Changes');
+                        if (res.success) location.reload();
                         else alert('Error: ' + res.message);
                     });
                 }
                 function deleteTemplate(id) {
                     if (!confirm('Delete this template?')) return;
+                    const btn = $('#btn-del-' + id);
+                    btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i>');
                     $.post('<?=$modulelink?>', { ajax: '1', op: 'delete_template', id: id }, function(res) {
                         if (res.success) $('#tmpl-' + id).remove();
                     });
@@ -389,13 +477,13 @@ function cloudflare_output($vars) {
                     </div>
                 </div>
                 <div style="margin-top: 20px;">
-                    <button type="button" class="btn btn-primary" onclick="saveProducts()"><i class="fa fa-save"></i> Save Changes</button>
+                    <button type="button" id="btnSaveProducts" class="btn btn-primary" onclick="saveProducts()"><i class="fa fa-save"></i> Save Changes</button>
                     <span id="saveStatus" style="margin-left: 15px; display:none;"><i class="fa fa-check text-success"></i> Saved!</span>
                 </div>
             </form>
             <script>
                 function saveProducts() {
-                    const btn = $('#productForm button');
+                    const btn = $('#btnSaveProducts');
                     btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving...');
                     $.post('<?=$modulelink?>', $('#productForm').serialize(), function(res) {
                         btn.prop('disabled', false).html('<i class="fa fa-save"></i> Save Changes');
