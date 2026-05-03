@@ -88,26 +88,143 @@
                         <div class="cf-acc-header">
                             <div class="cf-acc-icon"><i class="fa fa-user-circle"></i></div>
                             <div class="cf-acc-info">
-                                <strong>{$acc->name}</strong>
-                                <span>{$acc->email}</span>
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <div>
+                                <h4 style="margin:0 0 5px; font-weight:700;">{$acc->name}</h4>
+                                <span class="cf-badge cf-badge-active" style="font-size:10px;">{$acc->email}</span>
                             </div>
-                        </div>
-                        <div class="cf-acc-actions">
-                            <button onclick='openAccountModal({json_encode($acc)})' class="btn-edit"><i class="fa fa-edit"></i> Edit</button>
-                            <form method="post" action="index.php?m=cloudflare&action=deleteAccount" style="display:inline;" onsubmit="return confirm('Remove this account?')">
-                                <input type="hidden" name="account_id" value="{$acc->id}">
-                                <button type="submit" class="btn-del"><i class="fa fa-trash"></i></button>
+                            <form method="post" onsubmit="return confirm('Disconnect this account?')">
+                                <input type="hidden" name="action" value="deleteAccount">
+                                <input type="hidden" name="id" value="{$acc->id}">
+                                <button type="submit" style="background:none; border:none; color:#ef4444; cursor:pointer;"><i class="fa fa-trash"></i></button>
                             </form>
                         </div>
+                        <div style="margin-top:20px; font-size:12px; color:#64748b;">
+                            <i class="fa fa-clock-o"></i> Linked: {$acc->created_at|date_format}
+                        </div>
                     </div>
-                {foreachelse}
-                    <div class="cf-empty-state">
-                        <i class="fa fa-key"></i>
-                        <p>No Cloudflare accounts added yet. Add your personal BYOT token to start managing domains.</p>
+                    {/foreach}
+                    {if count($userAccounts) == 0}
+                    <div class="cf-empty-state" style="grid-column: 1 / -1; text-align:center; padding:40px; background:#f8fafc; border-radius:12px; border:1px dashed #e2e8f0;">
+                        <i class="fa fa-shield" style="font-size:32px; color:#cbd5e1; margin-bottom:15px;"></i>
+                        <p style="color:#64748b;">No accounts linked. Add one to start managing your domains.</p>
                     </div>
-                {/foreach}
+                    {/if}
+                </div>
+            </div>
+
+            <div id="add-account-view" style="display:none;">
+                <div class="cf-content-header" style="margin-bottom:20px;">
+                    <button class="cf-btn-manage-sm" onclick="hideAddAccount()" style="margin-bottom:15px;"><i class="fa fa-arrow-left"></i> Back to Accounts</button>
+                    <h3>Connect Cloudflare Account</h3>
+                    <p>Integrate your Cloudflare account to unlock advanced edge protection.</p>
+                </div>
+
+                <div class="cf-setup-container">
+                    <div class="cf-setup-form">
+                        <form method="post" id="addAccountForm">
+                            <input type="hidden" name="action" value="addAccount">
+                            
+                            <div class="cf-auth-toggle">
+                                <div class="cf-toggle-btn active" id="btn-token" onclick="switchAuth('token')">API Token</div>
+                                <div class="cf-toggle-btn" id="btn-global" onclick="switchAuth('global')">Global API Key</div>
+                            </div>
+
+                            <input type="hidden" name="auth_type" id="auth_type" value="token">
+
+                            <div style="margin-bottom:20px;">
+                                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:8px; color:var(--cf-dark);">Account Label</label>
+                                <input type="text" name="name" class="cf-input" placeholder="e.g. Personal Account" required>
+                            </div>
+
+                            <div style="margin-bottom:20px;">
+                                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:8px; color:var(--cf-dark);">Cloudflare Email</label>
+                                <input type="email" name="email" class="cf-input" placeholder="your@email.com" required>
+                            </div>
+
+                            <div id="input-token-container" style="margin-bottom:25px;">
+                                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:8px; color:var(--cf-dark);">API Token</label>
+                                <input type="password" name="api_token" id="api_token" class="cf-input" placeholder="Paste your API token here">
+                                <p style="font-size:11px; color:#94a3b8; margin-top:8px;"><i class="fa fa-lock"></i> Use "Edit Zone DNS" template for maximum security.</p>
+                            </div>
+
+                            <div id="input-global-container" style="display:none; margin-bottom:25px;">
+                                <label style="display:block; font-size:13px; font-weight:600; margin-bottom:8px; color:var(--cf-dark);">Global API Key</label>
+                                <input type="password" name="global_key" id="global_key" class="cf-input" placeholder="Paste your Global API Key here">
+                                <p style="font-size:11px; color:#f59e0b; margin-top:8px;"><i class="fa fa-warning"></i> Global keys have full account access. Use with caution.</p>
+                            </div>
+
+                            <button type="submit" class="cf-btn-primary" style="width:100%; justify-content:center; padding:12px;">Complete Integration</button>
+                        </form>
+                    </div>
+
+                    <div class="cf-setup-guide">
+                        <h4 style="margin:0 0 25px; font-weight:700; font-size:16px;">Integration Guide</h4>
+                        
+                        <div class="cf-guide-step">
+                            <div class="cf-step-num">1</div>
+                            <div class="cf-step-content">
+                                <h5>Access API Dashboard</h5>
+                                <p>Login to Cloudflare and navigate to <strong>My Profile > API Tokens</strong>.</p>
+                            </div>
+                        </div>
+
+                        <div class="cf-guide-step">
+                            <div class="cf-step-num">2</div>
+                            <div class="cf-step-content" id="guide-step-2">
+                                <h5>Create API Token</h5>
+                                <p>Use the <strong>"Edit Zone DNS"</strong> template and ensure <strong>"All Zones"</strong> is selected under permissions.</p>
+                            </div>
+                        </div>
+
+                        <div class="cf-guide-step">
+                            <div class="cf-step-num">3</div>
+                            <div class="cf-step-content">
+                                <h5>Authorize Platform</h5>
+                                <p>Copy the generated token and paste it into the form to the left to finalize integration.</p>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:40px; padding:20px; background:rgba(243, 128, 32, 0.05); border-radius:12px; border:1px solid rgba(243, 128, 32, 0.1);">
+                            <p style="font-size:12px; color:var(--cf-orange); margin:0; line-height:1.6;">
+                                <i class="fa fa-info-circle"></i> <strong>Note:</strong> We recommend using API Tokens over Global Keys for enhanced security and scoped access.
+                            </p>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
+
+        <script>
+            function showAddAccount() {
+                $('#account-list-view').fadeOut(200, function() {
+                    $('#add-account-view').fadeIn(200);
+                });
+            }
+            function hideAddAccount() {
+                $('#add-account-view').fadeOut(200, function() {
+                    $('#account-list-view').fadeIn(200);
+                });
+            }
+            function switchAuth(type) {
+                $('#auth_type').val(type);
+                if (type === 'token') {
+                    $('#btn-token').addClass('active');
+                    $('#btn-global').removeClass('active');
+                    $('#input-token-container').show();
+                    $('#input-global-container').hide();
+                    $('#guide-step-2 h5').text('Create API Token');
+                    $('#guide-step-2 p').html('Use the <strong>"Edit Zone DNS"</strong> template and ensure <strong>"All Zones"</strong> is selected.');
+                } else {
+                    $('#btn-global').addClass('active');
+                    $('#btn-token').removeClass('active');
+                    $('#input-global-container').show();
+                    $('#input-token-container').hide();
+                    $('#guide-step-2 h5').text('Find Global Key');
+                    $('#guide-step-2 p').html('Scroll to the bottom of the API Tokens page and click <strong>"View"</strong> next to Global API Key.');
+                }
+            }
+        </script>
 
         <!-- Tab Content: Proxied Domains -->
         <div id="tab-proxied" class="cf-tab-content animate-fade-in">
@@ -333,11 +450,26 @@ function deleteZone(domain, accId) {
 .cf-restricted-header p { color: var(--cf-gray); font-size: 16px; max-width: 500px; margin: 0 auto; }
 
 .cf-eligibility-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 20px; padding: 40px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); }
-.cf-eligibility-card h3 { margin-top: 0; font-size: 20px; font-weight: 700; }
-.cf-eligible-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 30px; }
-.cf-plan-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; transition: 0.3s; }
-.cf-plan-card:hover { transform: translateY(-5px); border-color: var(--cf-orange); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
-.cf-plan-icon { font-size: 24px; color: var(--cf-orange); margin-bottom: 10px; }
+.cf-eligibility-card h3 { margin-top: 0; font-size: 20px;/* Account Grid & Form */
+.cf-account-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
+.cf-account-card { background: #fff; border: 1px solid #eef2f6; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); transition: 0.3s; }
+.cf-account-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(0,0,0,0.06); }
+
+/* Premium Add Account Section */
+.cf-setup-container { display: flex; background: #fff; border-radius: 16px; overflow: hidden; border: 1px solid #eef2f6; box-shadow: 0 10px 30px rgba(0,0,0,0.05); margin-top: 20px; }
+.cf-setup-form { flex: 1.2; padding: 40px; border-right: 1px solid #f1f5f9; }
+.cf-setup-guide { flex: 0.8; padding: 40px; background: #f8fafc; }
+
+.cf-auth-toggle { display: flex; background: #f1f5f9; border-radius: 50px; padding: 4px; margin-bottom: 25px; width: fit-content; }
+.cf-toggle-btn { padding: 8px 20px; border-radius: 50px; cursor: pointer; font-size: 13px; font-weight: 600; color: #64748b; transition: 0.3s; }
+.cf-toggle-btn.active { background: #fff; color: var(--cf-orange); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+
+.cf-guide-step { display: flex; gap: 15px; margin-bottom: 25px; }
+.cf-step-num { width: 28px; height: 28px; background: var(--cf-orange); color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.cf-step-content h5 { margin: 0 0 5px 0; font-weight: 600; font-size: 14px; color: var(--cf-dark); }
+.cf-step-content p { margin: 0; font-size: 13px; color: #64748b; line-height: 1.5; }
+
+.cf-restricted-footer { margin-top: 30px; color: var(--cf-gray); font-size: 13px; }
 .cf-plan-card h4 { margin: 0 0 15px; font-size: 15px; font-weight: 700; }
 .cf-btn-order { display: inline-block; background: var(--cf-dark); color: #fff; text-decoration: none; padding: 8px 15px; border-radius: 6px; font-size: 12px; font-weight: 700; transition: 0.2s; }
 .cf-btn-order:hover { background: var(--cf-orange); color: #fff; }

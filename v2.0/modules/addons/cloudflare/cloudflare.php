@@ -551,7 +551,37 @@ function cloudflare_clientarea($vars) {
         } catch (\Exception $e) { }
     }
 
-    // 3. Handle AJAX Operations (Purge, Delete Zone, etc)
+    // 3. Handle Form Actions (Add Account, Delete Account, etc)
+    if ($_POST && !isset($_POST['ajax'])) {
+        $postAction = $_POST['action'] ?? '';
+        
+        if ($postAction == 'addAccount') {
+            $name = $_POST['name'];
+            $email = $_POST['email'];
+            $authType = $_POST['auth_type'];
+            $token = ($authType == 'token') ? $_POST['api_token'] : $_POST['global_key'];
+            
+            if ($name && $email && $token) {
+                Capsule::table('mod_cloudflare_user_accounts')->insert([
+                    'client_id' => $clientId,
+                    'name' => $name,
+                    'email' => $email,
+                    'api_token' => $token, // In a production env, you should encrypt this
+                    'created_at' => date('Y-m-d H:i:s'),
+                    'updated_at' => date('Y-m-d H:i:s')
+                ]);
+                header("Location: index.php?m=cloudflare&success=account_added"); exit;
+            }
+        }
+
+        if ($postAction == 'deleteAccount') {
+            $accId = (int)$_POST['id'];
+            Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->delete();
+            header("Location: index.php?m=cloudflare&success=account_deleted"); exit;
+        }
+    }
+
+    // 4. Handle AJAX Operations (Purge, Delete Zone, etc)
     if (isset($_POST['ajax']) && $_POST['ajax'] == '1') {
         header('Content-Type: application/json');
         try {
