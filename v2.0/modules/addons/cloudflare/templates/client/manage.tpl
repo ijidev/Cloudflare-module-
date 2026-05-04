@@ -34,9 +34,14 @@
                         <h3><i class="fa fa-list"></i> DNS Records</h3>
                         <p>Manage your edge-optimized DNS configurations.</p>
                     </div>
-                    <button class="cf-btn-primary-sm" onclick="$('#addRecordModal').fadeIn()"><i class="fa fa-plus"></i> Add Record</button>
+                    <button class="cf-btn-primary-sm" onclick="$('#addRecordModal').css('display', 'flex').hide().fadeIn(200)"><i class="fa fa-plus"></i> Add Record</button>
                 </div>
                 <div class="cf-card-body">
+                    {if $dnsError}
+                        <div style="padding:15px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; margin-bottom:15px; color:#991b1b; font-size:13px;">
+                            <strong>API Error:</strong> {$dnsError}
+                        </div>
+                    {/if}
                     <table class="cf-dashboard-table" style="width: 100%; border-collapse: collapse; min-width: 600px;">
                         <thead>
                             <tr>
@@ -119,8 +124,8 @@
 </div>
 
 <!-- Add Record Modal -->
-<div id="addRecordModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.5); z-index:9999; backdrop-filter:blur(4px); align-items:center; justify-content:center; display:flex;">
-    <div style="background:#fff; border-radius:16px; padding:24px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,0.1);">
+<div id="addRecordModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.5); z-index:9999; backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:16px; padding:24px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,0.1); margin:auto; max-height: 90vh; overflow-y: auto;">
         <h3 style="margin:0 0 15px; font-weight:700;">Add DNS Record</h3>
         <form id="addRecordForm" onsubmit="addRecord(event)">
             <div class="cf-form-group" style="margin-bottom:15px;">

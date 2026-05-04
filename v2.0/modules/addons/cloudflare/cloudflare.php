@@ -655,13 +655,18 @@ function cloudflare_clientarea($vars) {
         }
 
         // Fetch DNS records
+        $dnsError = null;
         try {
             $api = new \WHMCS\Module\Addon\Cloudflare\API($account->api_token, $account->email);
-            $zoneId = $api->getZoneId($domain);
+            $zoneId = $api->getZoneId(trim($domain));
+            if (!$zoneId) {
+                throw new \Exception("Zone ID not found for domain: " . trim($domain));
+            }
             $dnsRecordsResp = $api->getDNSRecords($zoneId);
             $dnsRecords = isset($dnsRecordsResp['result']) ? $dnsRecordsResp['result'] : [];
         } catch (\Exception $e) {
             $dnsRecords = [];
+            $dnsError = $e->getMessage();
         }
 
         return [
@@ -670,7 +675,8 @@ function cloudflare_clientarea($vars) {
                 'domainName' => $domain,
                 'account' => $account,
                 'companyname' => $GLOBALS['companyname'],
-                'dnsRecords' => $dnsRecords
+                'dnsRecords' => $dnsRecords,
+                'dnsError' => $dnsError
             ]
         ];
     }
