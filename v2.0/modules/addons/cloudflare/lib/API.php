@@ -76,7 +76,7 @@ class API
                 $extra = " (Auth Error: If using an API Token, ensure the Email field is EMPTY in settings. If using a Global Key, ensure Email is correct. Also ensure no trailing spaces.)";
             }
             
-            throw new \Exception("Cloudflare API Error: " . $errorMsg . " (Code: " . $errorCode . ")" . $extra);
+            throw new \Exception("Cloudflare API Error (HTTP $httpCode): " . $errorMsg . " (Code: " . $errorCode . ")" . $extra);
         }
 
         return $decoded;

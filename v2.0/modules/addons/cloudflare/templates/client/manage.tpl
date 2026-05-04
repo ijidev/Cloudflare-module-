@@ -39,7 +39,8 @@
                 <div class="cf-card-body">
                     {if $dnsError}
                         <div style="padding:15px; background:#fef2f2; border:1px solid #fecaca; border-radius:8px; margin-bottom:15px; color:#991b1b; font-size:13px;">
-                            <strong>API Error:</strong> {$dnsError}
+                            <p><strong>API Error:</strong> {$dnsError}</p>
+                            <p style="margin-top:5px; font-size:11px; color:#b91c1c;"><em>Note: If using an API Token, ensure the email field was left empty during setup. Use the <b>test_cf.php</b> diagnostic script to verify.</em></p>
                         </div>
                     {/if}
                     <table class="cf-dashboard-table" style="width: 100%; border-collapse: collapse; min-width: 600px;">
