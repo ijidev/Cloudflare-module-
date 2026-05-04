@@ -165,6 +165,38 @@ function cloudflare_output($vars) {
     $action = $_REQUEST['action'] ?? 'infra';
     $modulelink = $vars['modulelink'];
 
+    // Helper for self-healing
+    $repairInfra = function($infraId) {
+        $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
+        if (!$infra) return 0;
+        $linkedProducts = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $infraId)->pluck('product_id')->toArray();
+        $hosting = Capsule::table('tblhosting')->whereIn('packageid', $linkedProducts)->where('domainstatus', 'Active')->get();
+        $repaired = 0;
+        require_once __DIR__ . '/lib/API.php';
+        foreach ($hosting as $s) {
+            $domain = trim($s->domain);
+            if (!$domain || gethostbyname($domain) !== $infra->ip) continue;
+            $acc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $s->userid)->first();
+            if (!$acc) continue;
+            try {
+                $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
+                $zoneId = $api->getZoneId($domain);
+                if (!$zoneId) {
+                    $resp = $api->createZone($domain, $acc->account_id);
+                    $zoneId = $resp['result']['id'] ?? null;
+                }
+                if ($zoneId) {
+                    $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
+                    foreach ($templates as $t) {
+                        try { $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied); } catch (\Exception $e) {}
+                    }
+                    $repaired++;
+                }
+            } catch (\Exception $e) {}
+        }
+        return $repaired;
+    };
+
     // AJAX Operations (Admin)
     if (isset($_POST['ajax']) && $_POST['ajax'] == '1') {
         header('Content-Type: application/json');
@@ -193,6 +225,17 @@ function cloudflare_output($vars) {
                         }
                     }
                     echo json_encode(['success' => true]); exit;
+
+                case 'repair_infra':
+                    $id = (int)$_POST['id'];
+                    $count = $repairInfra($id);
+                    echo json_encode(['success' => true, 'repaired' => $count]); exit;
+
+                case 'repair_all':
+                    $infras = Capsule::table('mod_cloudflare_infrastructure')->get();
+                    $total = 0;
+                    foreach ($infras as $i) $total += $repairInfra($i->id);
+                    echo json_encode(['success' => true, 'repaired' => $total]); exit;
             }
         } catch (\Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]); exit;
@@ -319,8 +362,22 @@ function cloudflare_output($vars) {
     <div class="cf-admin-card">
         <div class="cf-admin-header">
             <h3><i class="fa fa-server"></i> Active Infrastructure</h3>
-            <button class="btn btn-primary btn-sm" onclick="$('#addInfraForm').toggle()"><i class="fa fa-plus"></i> New Cluster</button>
+            <div>
+                <button class="btn btn-warning btn-sm" onclick="repairAll(this)"><i class="fa fa-magic"></i> Global Sync Hub</button>
+                <button class="btn btn-primary btn-sm" onclick="$('#addInfraForm').toggle()"><i class="fa fa-plus"></i> New Cluster</button>
+            </div>
         </div>
+        <script>
+            function repairAll(btn) {
+                const originalHtml = $(btn).html();
+                $(btn).prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Repairing All Clusters...');
+                $.post('<?=$modulelink?>', { ajax: '1', op: 'repair_all' }, function(res) {
+                    $(btn).prop('disabled', false).html(originalHtml);
+                    alert('Self-healing complete. Repaired ' + res.repaired + ' assets across all clusters.');
+                    location.reload();
+                });
+            }
+        </script>
         <div id="addInfraForm" style="display:none; margin-bottom: 20px; padding: 20px; background: #f8fafc; border-radius: 8px;">
             <form method="post" action="<?=$modulelink?>&action=add_infra">
                 <div class="row">
@@ -562,6 +619,21 @@ function cloudflare_output($vars) {
                 ->select('tblhosting.id', 'tblhosting.domain', 'tblproducts.name as product_name', 'tblclients.firstname', 'tblclients.lastname', 'tblhosting.userid')
                 ->get();
         ?>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+                <p class="text-muted" style="margin:0;">These are active hosting services using products linked to this cluster.</p>
+                <button class="btn btn-warning btn-sm" onclick="repairInfra(this, <?=$id?>)"><i class="fa fa-magic"></i> Scan & Repair Assets</button>
+            </div>
+            <script>
+                function repairInfra(btn, id) {
+                    const originalHtml = $(btn).html();
+                    $(btn).prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Scanning DNS...');
+                    $.post('<?=$modulelink?>', { ajax: '1', op: 'repair_infra', id: id }, function(res) {
+                        $(btn).prop('disabled', false).html(originalHtml);
+                        alert('Sync complete. Repaired ' + res.repaired + ' assets for this cluster.');
+                        location.reload();
+                    });
+                }
+            </script>
             <table class="cf-table-admin">
                 <thead><tr><th>Domain</th><th>Product</th><th>Client</th><th style="text-align:right;">Actions</th></tr></thead>
                 <tbody>
