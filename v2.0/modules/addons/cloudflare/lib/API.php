@@ -102,16 +102,6 @@ class API
         return $response['result'][0]['id'] ?? null;
     }
 
-    public function createZone($domain, $accountId)
-    {
-        $data = [
-            'name' => $domain,
-            'account' => ['id' => $accountId],
-            'jump_start' => true
-        ];
-        return $this->request('zones', $data, 'POST');
-    }
-
     public function getZones()
     {
         $response = $this->request('zones');
