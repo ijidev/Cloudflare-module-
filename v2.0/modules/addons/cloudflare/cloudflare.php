@@ -654,6 +654,19 @@ function cloudflare_clientarea($vars) {
             header("Location: index.php?m=cloudflare&error=invalid_account"); exit;
         }
 
+        // Trigger sync if requested (create zone if missing)
+        if (isset($_GET['trigger_sync']) && $_GET['trigger_sync'] == '1') {
+            try {
+                $api = new \WHMCS\Module\Addon\Cloudflare\API($account->api_token, $account->email);
+                $zoneId = $api->getZoneId(trim($domain));
+                if (!$zoneId) {
+                    $api->createZone(trim($domain), $account->account_id);
+                }
+            } catch (\Exception $e) {
+                // Ignore creation errors here, let the DNS fetch logic below handle reporting
+            }
+        }
+
         // Fetch DNS records
         $dnsError = null;
         try {
