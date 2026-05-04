@@ -175,12 +175,27 @@ function cloudflare_output($vars) {
         require_once __DIR__ . '/lib/API.php';
         foreach ($hosting as $s) {
             $domain = trim($s->domain);
-            if (!$domain || gethostbyname($domain) !== $infra->ip) continue;
+            if (!$domain) continue;
+            
             $acc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $s->userid)->first();
             if (!$acc) continue;
+            
             try {
                 $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
                 $zoneId = $api->getZoneId($domain);
+                
+                $isPointing = (gethostbyname($domain) === $infra->ip);
+                if (!$isPointing && $zoneId) {
+                    $dnsResp = $api->getDNSRecords($zoneId);
+                    foreach (($dnsResp['result'] ?? []) as $r) {
+                        if ($r['type'] == 'A' && ($r['name'] == $domain || $r['name'] == 'www.'.$domain) && $r['content'] == $infra->ip) {
+                            $isPointing = true; break;
+                        }
+                    }
+                }
+
+                if (!$isPointing) continue;
+
                 if (!$zoneId) {
                     $resp = $api->createZone($domain, $acc->account_id);
                     $zoneId = $resp['result']['id'] ?? null;
@@ -214,6 +229,16 @@ function cloudflare_output($vars) {
 
                 case 'delete_template':
                     Capsule::table('mod_cloudflare_templates')->where('id', (int)$_POST['id'])->delete();
+                    echo json_encode(['success' => true]); exit;
+
+                case 'update_template':
+                    Capsule::table('mod_cloudflare_templates')->where('id', (int)$_POST['id'])->update([
+                        'type' => $_POST['type'],
+                        'name' => $_POST['name'],
+                        'content' => $_POST['content'],
+                        'ttl' => (int)$_POST['ttl'],
+                        'proxied' => $_POST['proxied'] == 'true' ? 1 : 0,
+                    ]);
                     echo json_encode(['success' => true]); exit;
 
                 case 'update_products':
@@ -824,9 +849,14 @@ function cloudflare_clientarea($vars) {
                         $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
                         $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
                         foreach ($templates as $t) {
-                            $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied);
+                            try { $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied); } catch (\Exception $e) {}
                         }
                     }
+                    echo json_encode(['success' => true]); exit;
+                case 'updateSecurity':
+                    $setting = $_POST['setting'];
+                    $value = $_POST['value'];
+                    $api->updateZoneSetting($zoneId, $setting, $value);
                     echo json_encode(['success' => true]); exit;
             }
         } catch (\Exception $e) {
@@ -873,16 +903,24 @@ function cloudflare_clientarea($vars) {
             } catch (\Exception $e) { }
         }
 
-        // Fetch DNS records
+        // Fetch DNS and Settings
         $dnsError = null;
+        $cfSettings = [];
         try {
             $api = new \WHMCS\Module\Addon\Cloudflare\API($account->api_token, $account->email);
             $zoneId = $api->getZoneId(trim($domain));
-            if (!$zoneId) {
-                throw new \Exception("Zone ID not found for domain: " . trim($domain));
-            }
+            if (!$zoneId) throw new \Exception("Zone ID not found");
+            
             $dnsRecordsResp = $api->getDNSRecords($zoneId);
-            $dnsRecords = isset($dnsRecordsResp['result']) ? $dnsRecordsResp['result'] : [];
+            $dnsRecords = $dnsRecordsResp['result'] ?? [];
+            
+            // Fetch security settings
+            $sResp = $api->getZoneSettings($zoneId);
+            if (isset($sResp['result'])) {
+                foreach ($sResp['result'] as $s) {
+                    $cfSettings[$s['id']] = $s['value'];
+                }
+            }
         } catch (\Exception $e) {
             $dnsRecords = [];
             $dnsError = $e->getMessage();
@@ -895,6 +933,7 @@ function cloudflare_clientarea($vars) {
                 'account' => $account,
                 'companyname' => $GLOBALS['companyname'],
                 'dnsRecords' => $dnsRecords,
+                'settings' => $cfSettings,
                 'dnsError' => $dnsError
             ]
         ];

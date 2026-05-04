@@ -88,12 +88,12 @@
                 <div class="cf-card-body">
                     <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 0;">
                         <span>Always Use HTTPS</span>
-                        <div class="cf-switch"><input type="checkbox" checked><span class="cf-slider"></span></div>
+                        <div class="cf-switch"><input type="checkbox" {if $settings.always_use_https == 'on'}checked{/if} onchange="updateSecurity('always_use_https', this.checked)"><span class="cf-slider"></span></div>
                     </div>
                     <hr style="border:0; border-top:1px solid #f1f5f9; margin:10px 0;">
                     <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 0;">
                         <span>Automatic HTTPS Rewrites</span>
-                        <div class="cf-switch"><input type="checkbox" checked><span class="cf-slider"></span></div>
+                        <div class="cf-switch"><input type="checkbox" {if $settings.automatic_https_rewrites == 'on'}checked{/if} onchange="updateSecurity('automatic_https_rewrites', this.checked)"><span class="cf-slider"></span></div>
                     </div>
                 </div>
             </div>
@@ -166,7 +166,7 @@
 <script>
 function purgeCache() {
     Swal.fire({ title: 'Purging Cache...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-    $.post('index.php?m=cloudflare', { ajax: '1', op: 'purgeCache', domain: '{$domainName}', acc_id: '{$account->id}' }, function(res) {
+    $.post('index.php?m=cloudflare', { ajax: '1', op: 'purgeCache', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}' }, function(res) {
         if (res.success) Swal.fire('Success', 'Edge cache has been purged.', 'success');
         else Swal.fire('Error', res.message, 'error');
     });
@@ -174,16 +174,35 @@ function purgeCache() {
 function togglePause() {
     const isPaused = $('#btnPause').html().includes('Resume');
     Swal.fire({ title: (isPaused ? 'Resuming...' : 'Pausing...'), allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-    $.post('index.php?m=cloudflare', { ajax: '1', op: 'pauseZone', domain: '{$domainName}', acc_id: '{$account->id}', pause: !isPaused }, function(res) {
+    $.post('index.php?m=cloudflare', { ajax: '1', op: 'pauseZone', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}', pause: !isPaused }, function(res) {
         if (res.success) window.location.reload();
         else Swal.fire('Error', res.message, 'error');
     });
 }
 function syncDNS() {
     Swal.fire({ title: 'Syncing DNS...', text: 'Re-applying infrastructure templates...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-    $.post('index.php?m=cloudflare', { ajax: '1', op: 'syncDNS', domain: '{$domainName}', acc_id: '{$account->id}' }, function(res) {
+    $.post('index.php?m=cloudflare', { ajax: '1', op: 'syncDNS', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}' }, function(res) {
         if (res.success) window.location.reload();
         else Swal.fire('Error', res.message, 'error');
+    });
+}
+function updateSecurity(setting, value) {
+    $.post('index.php?m=cloudflare', { ajax: '1', op: 'updateSecurity', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}', setting: setting, value: value ? 'on' : 'off' }, function(res) {
+        if (!res.success) Swal.fire('Error', res.message, 'error');
+    });
+}
+function deleteAsset() {
+    Swal.fire({
+        title: 'Delete Asset?', text: "This will remove the domain from Cloudflare management.",
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Delete'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            Swal.fire({ title: 'Deleting...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+            $.post('index.php?m=cloudflare', { ajax: '1', op: 'deleteZone', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}' }, function(res) {
+                if (res.success) window.location.href = 'index.php?m=cloudflare';
+                else Swal.fire('Error', res.message, 'error');
+            });
+        }
     });
 }
 function openEditModal(record) {
