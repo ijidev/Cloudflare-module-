@@ -337,12 +337,16 @@ function cloudflare_output($vars) {
                 <?php foreach ($infras as $i): 
                     $tCount = Capsule::table('mod_cloudflare_templates')->where('infra_id', $i->id)->count();
                     $pCount = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $i->id)->count();
+                    
+                    $linkedProducts = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $i->id)->pluck('product_id')->toArray();
+                    $aCount = Capsule::table('tblhosting')->whereIn('packageid', $linkedProducts)->where('domainstatus', 'Active')->count();
                 ?>
                 <tr>
                     <td><strong><?=$i->name?></strong></td>
                     <td><code><?=$i->ip?></code></td>
                     <td><span class="label label-info"><?=$tCount?> Records</span></td>
                     <td><span class="label label-warning"><?=$pCount?> Plans</span></td>
+                    <td><span class="label label-success"><?=$aCount?> Active Assets</span></td>
                     <td style="text-align:right;">
                         <a href="<?=$modulelink?>&action=manage_infra&id=<?=$i->id?>" class="btn btn-default btn-xs">Manage</a>
                         <form method="post" action="<?=$modulelink?>&action=delete_infra" style="display:inline;" onsubmit="return confirm('Delete this infrastructure and all its templates?')">
@@ -373,10 +377,11 @@ function cloudflare_output($vars) {
             </div>
         </div>
 
-        <ul class="nav nav-tabs" style="margin-bottom: 20px; border-bottom: 1px solid #ddd;">
-            <li class="<?=$subtab=='templates'?'active':''?>"><a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=templates">DNS Templates</a></li>
-            <li class="<?=$subtab=='products'?'active':''?>"><a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=products">Linked Products</a></li>
-        </ul>
+        <div class="cf-tabs" style="margin-bottom: 20px;">
+            <a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=templates" class="<?=$subtab=='templates'?'active':''?>">DNS Templates</a>
+            <a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=products" class="<?=$subtab=='products'?'active':''?>">Linked Products</a>
+            <a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=assets" class="<?=$subtab=='assets'?'active':''?>">Linked Assets</a>
+        </div>
         <?php if ($subtab == 'templates'): ?>
             <div class="alert alert-info">
                 <i class="fa fa-info-circle"></i> Use <code>{domain}</code> for the client domain and <code>{ip}</code> for the cluster IP (<?=$infra->ip?>).
@@ -493,23 +498,37 @@ function cloudflare_output($vars) {
                     });
                 }
             </script>
-        <?php else: 
+        <?php elseif ($subtab == 'products'): 
             $linked = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $id)->pluck('product_id')->toArray();
             $products = Capsule::table('tblproducts')->orderBy('name', 'asc')->get();
+            
+            $owners = Capsule::table('mod_cloudflare_product_infra')
+                ->join('mod_cloudflare_infrastructure', 'mod_cloudflare_product_infra.infra_id', '=', 'mod_cloudflare_infrastructure.id')
+                ->pluck('mod_cloudflare_infrastructure.name', 'mod_cloudflare_product_infra.product_id')
+                ->toArray();
+            
+            $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $id)->first();
         ?>
             <form id="productForm">
                 <input type="hidden" name="infra_id" value="<?=$id?>">
                 <input type="hidden" name="ajax" value="1">
                 <input type="hidden" name="op" value="update_products">
                 <div style="max-height: 500px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 20px; background: #fff;">
-                    <p class="text-muted" style="margin-bottom: 20px;">Select the products that belong to this infrastructure cluster.</p>
+                    <p class="text-muted" style="margin-bottom: 20px;">Select the products that belong to this infrastructure cluster. Products can only be linked to one cluster.</p>
                     <div class="row">
-                        <?php foreach ($products as $p): ?>
+                        <?php foreach ($products as $p): 
+                            $owner = $owners[$p->id] ?? null;
+                            $isOwnedByThis = (in_array($p->id, $linked));
+                            $isDisabled = ($owner && !$isOwnedByThis);
+                        ?>
                             <div class="col-md-4">
-                                <div class="checkbox" style="padding: 10px; border: 1px solid #f1f5f9; border-radius: 6px; margin-bottom: 10px;">
-                                    <label style="cursor:pointer; display:block; width:100%;">
-                                        <input type="checkbox" name="products[]" value="<?=$p->id?>" <?=in_array($p->id, $linked)?'checked':''?>>
+                                <div class="checkbox" style="padding: 10px; border: 1px solid #f1f5f9; border-radius: 6px; margin-bottom: 10px; <?= $isDisabled ? 'opacity:0.6;' : '' ?>">
+                                    <label style="cursor:<?= $isDisabled ? 'not-allowed' : 'pointer' ?>; display:block; width:100%;">
+                                        <input type="checkbox" name="products[]" value="<?=$p->id?>" <?=$isOwnedByThis?'checked':''?> <?= $isDisabled ? 'disabled' : '' ?>>
                                         <strong><?=$p->name?></strong>
+                                        <?php if ($owner && !$isOwnedByThis): ?>
+                                            <br><small class="text-danger">Linked to: <b><?=$owner?></b></small>
+                                        <?php endif; ?>
                                     </label>
                                 </div>
                             </div>
@@ -533,6 +552,31 @@ function cloudflare_output($vars) {
                     });
                 }
             </script>
+        <?php elseif ($subtab == 'assets'): 
+            $linkedProducts = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $id)->pluck('product_id')->toArray();
+            $assets = Capsule::table('tblhosting')
+                ->join('tblproducts', 'tblhosting.packageid', '=', 'tblproducts.id')
+                ->join('tblclients', 'tblhosting.userid', '=', 'tblclients.id')
+                ->whereIn('tblhosting.packageid', $linkedProducts)
+                ->where('tblhosting.domainstatus', 'Active')
+                ->select('tblhosting.id', 'tblhosting.domain', 'tblproducts.name as product_name', 'tblclients.firstname', 'tblclients.lastname', 'tblhosting.userid')
+                ->get();
+        ?>
+            <table class="cf-table-admin">
+                <thead><tr><th>Domain</th><th>Product</th><th>Client</th><th style="text-align:right;">Actions</th></tr></thead>
+                <tbody>
+                    <?php foreach ($assets as $a): ?>
+                        <tr>
+                            <td><strong><?=$a->domain?></strong></td>
+                            <td><?=$a->product_name?></td>
+                            <td><a href="clientssummary.php?userid=<?=$a->userid?>"><?=$a->firstname?> <?=$a->lastname?></a></td>
+                            <td style="text-align:right;"><a href="clientshosting.php?userid=<?=$a->userid?>&id=<?=$a->id?>" class="btn btn-default btn-xs">View Service</a></td>
+                        </tr>
+                    <?php endforeach; if(count($assets)==0): ?>
+                        <tr><td colspan="4" class="text-center" style="padding:40px; color:#64748b;">No active assets linked to this cluster yet.</td></tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
         <?php endif; ?>
     </div>
 <?php elseif ($action == 'sync'): 
@@ -596,6 +640,17 @@ function cloudflare_clientarea($vars) {
     $whmcsDomains = Capsule::table('tbldomains')->where('userid', $clientId)->get();
     $whmcsDomainNames = $whmcsDomains->pluck('domain')->toArray();
     $fetchAllDomains = Capsule::table('mod_cloudflare_settings')->where('setting', 'fetch_all_domains')->value('value') == 'on';
+    
+    $validServices = [];
+    foreach ($activeServices as $s) {
+        if (isset($allowedProducts[$s->packageid])) {
+            $validServices[] = [
+                'id' => $s->id,
+                'domain' => $s->domain ?: '(No Domain Linked)',
+                'product_name' => Capsule::table('tblproducts')->where('id', $s->packageid)->value('name')
+            ];
+        }
+    }
 
     foreach ($userAccounts as $acc) {
         try {
@@ -718,17 +773,32 @@ function cloudflare_clientarea($vars) {
             header("Location: index.php?m=cloudflare&error=invalid_account"); exit;
         }
 
-        // Trigger sync if requested (create zone if missing)
+        // Trigger sync if requested (create zone if missing and apply templates)
         if (isset($_GET['trigger_sync']) && $_GET['trigger_sync'] == '1') {
             try {
                 $api = new \WHMCS\Module\Addon\Cloudflare\API($account->api_token, $account->email);
                 $zoneId = $api->getZoneId(trim($domain));
                 if (!$zoneId) {
-                    $api->createZone(trim($domain), $account->account_id);
+                    $zoneResp = $api->createZone(trim($domain), $account->account_id);
+                    $zoneId = $zoneResp['result']['id'] ?? null;
                 }
-            } catch (\Exception $e) {
-                // Ignore creation errors here, let the DNS fetch logic below handle reporting
-            }
+                
+                // If service_id is provided, apply templates
+                if ($zoneId && isset($_GET['service_id'])) {
+                    $serviceId = (int)$_GET['service_id'];
+                    $service = Capsule::table('tblhosting')->where('id', $serviceId)->where('userid', $clientId)->first();
+                    if ($service) {
+                        $infraId = Capsule::table('mod_cloudflare_product_infra')->where('product_id', $service->packageid)->value('infra_id');
+                        if ($infraId) {
+                            $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
+                            $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
+                            foreach ($templates as $t) {
+                                $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied);
+                            }
+                        }
+                    }
+                }
+            } catch (\Exception $e) { }
         }
 
         // Fetch DNS records
@@ -765,6 +835,7 @@ function cloudflare_clientarea($vars) {
             'userAccounts' => $userAccounts,
             'proxiedDomains' => $proxiedDomains,
             'domains' => $whmcsDomains,
+            'validServices' => $validServices,
             'companyname' => $GLOBALS['companyname']
         ]
     ];

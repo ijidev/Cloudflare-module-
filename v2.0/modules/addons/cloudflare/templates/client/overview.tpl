@@ -228,6 +228,42 @@
         </div>
     </div>
 {/if}
+<style>
+.cf-btn-sync-all { background: var(--cf-orange); color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 600; font-size: 11px; cursor: pointer; }
+.cf-btn-sync-all:hover { background: #e67616; }
+</style>
+
+<!-- Sync Domain Modal -->
+<div id="syncModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.5); z-index:9999; backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:16px; padding:24px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,0.1); margin:auto;">
+        <h3 style="margin:0 0 15px; font-weight:700;">Initialize Domain Sync</h3>
+        <p style="font-size: 13px; color: #64748b; margin-bottom: 20px;">To correctly sync DNS records, please select the target hosting service this domain should point to.</p>
+        <form id="syncForm" onsubmit="handleSyncSubmit(event)">
+            <input type="hidden" name="domain" id="sync-domain-field">
+            <div class="cf-form-group" style="margin-bottom:15px;">
+                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Select Cloudflare Account</label>
+                <select name="acc" class="cf-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid #e2e8f0;" required>
+                    {foreach from=$userAccounts item=acc}
+                        <option value="{$acc->id}">{$acc->name}</option>
+                    {/foreach}
+                </select>
+            </div>
+            <div class="cf-form-group" style="margin-bottom:20px;">
+                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Select Active Service</label>
+                <select name="service_id" class="cf-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid #e2e8f0;" required>
+                    <option value="">-- Choose Target Hosting --</option>
+                    {foreach from=$validServices item=s}
+                        <option value="{$s.id}">{$s.domain} ({$s.product_name})</option>
+                    {/foreach}
+                </select>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px;">
+                <button type="button" onclick="$('#syncModal').fadeOut()" style="padding:10px 15px; border:1px solid #e2e8f0; background:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Cancel</button>
+                <button type="submit" id="btnConfirmSync" style="padding:10px 15px; border:none; background:var(--cf-orange); color:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Initialize Infrastructure</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 {literal}
 <script>
@@ -256,16 +292,22 @@ function switchAuth(type) {
     }
 }
 function syncDomain(domain) {
-    const accounts = {};
-    document.querySelectorAll('.cf-account-card h4').forEach((h4, idx) => {
-        const id = document.querySelectorAll('input[name="id"]')[idx].value;
-        accounts[id] = h4.innerText;
-    });
-    if (Object.keys(accounts).length === 0) { Swal.fire('No Accounts', 'Please add an account first.', 'warning'); return; }
-    Swal.fire({
-        title: 'Initialize Sync', text: `Which account should ${domain} be connected to?`,
-        input: 'select', inputOptions: accounts, showCancelButton: true, confirmButtonColor: '#f38020'
-    }).then(res => { if (res.isConfirmed && res.value) window.location.href = `index.php?m=cloudflare&action=manage&domain=${domain}&acc=${res.value}&trigger_sync=1`; });
+    $('#sync-domain-field').val(domain);
+    $('#syncModal').css('display', 'flex').hide().fadeIn(200);
+}
+function handleSyncSubmit(e) {
+    e.preventDefault();
+    const domain = $('#sync-domain-field').val();
+    const accId = $(e.target).find('select[name="acc"]').val();
+    const serviceId = $(e.target).find('select[name="service_id"]').val();
+    
+    if (!serviceId) {
+        Swal.fire('Error', 'Please select a target hosting service.', 'error');
+        return;
+    }
+    
+    Swal.fire({ title: 'Initializing Sync...', text: 'Connecting to Cloudflare...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+    window.location.href = `index.php?m=cloudflare&action=manage&domain=${domain}&acc=${accId}&trigger_sync=1&service_id=${serviceId}`;
 }
 </script>
 
