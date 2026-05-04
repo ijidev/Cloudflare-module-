@@ -39,11 +39,9 @@ function cloudflare_config() {
         'version' => '2.2',
         'fields' => [
             'fetch_all_domains' => [
-                'FriendlyName' => 'Fetch All Cloudflare Domains',
-                'Type' => 'yesno',
-                'Size' => '25',
-                'Default' => '',
-                'Description' => 'If enabled, the module will fetch and manage all domains found in the Cloudflare account. If disabled (default), it will only fetch domains associated with the WHMCS account.',
+                'FriendlyName' => 'Legacy Settings (Deprecated)',
+                'Type' => 'description',
+                'Description' => 'Settings have moved to the Module Addon page for better control.',
             ]
         ]
     ];
@@ -94,6 +92,18 @@ function cloudflare_activate() {
                 $table->string('account_id', 255)->nullable();
                 $table->timestamps();
             });
+        }
+
+        // Module Settings
+        if (!Capsule::schema()->hasTable('mod_cloudflare_settings')) {
+            Capsule::schema()->create('mod_cloudflare_settings', function ($table) {
+                $table->string('setting', 64)->primary();
+                $table->text('value');
+            });
+            // Default settings
+            Capsule::table('mod_cloudflare_settings')->insert([
+                ['setting' => 'fetch_all_domains', 'value' => 'off']
+            ]);
         }
 
         return ['status' => 'success', 'description' => 'Activated successfully.'];
@@ -274,6 +284,13 @@ function cloudflare_output($vars) {
             }
             header("Location: $modulelink&action=manage_infra&id=$infraId&tab=products&success=1"); exit;
         }
+
+        if ($action == 'save_settings') {
+            foreach ($_POST['settings'] as $key => $val) {
+                Capsule::table('mod_cloudflare_settings')->updateOrInsert(['setting' => $key], ['value' => $val]);
+            }
+            header("Location: $modulelink&action=settings&success=1"); exit;
+        }
     }
 
     // Admin UI
@@ -291,7 +308,8 @@ function cloudflare_output($vars) {
 
     <div class="cf-tabs">
         <a href="<?=$modulelink?>&action=infra" class="<?=($action=='infra' || $action=='manage_infra')?'active':''?>">Infrastructure Overview</a>
-        <a href="<?=$modulelink?>&action=sync" class="<?=$action=='sync'?'active':''?>">Domain Sync Status</a>
+        <a href="<?=$modulelink?>&action=sync" class="<?=$action=='sync'?'active':''?>">Sync Domain Assets</a>
+        <a href="<?=$modulelink?>&action=settings" class="<?=$action=='settings'?'active':''?>">General Settings</a>
     </div>
 
     <?php if ($action == 'infra'): 
@@ -517,6 +535,27 @@ function cloudflare_output($vars) {
             </script>
         <?php endif; ?>
     </div>
+<?php elseif ($action == 'sync'): 
+    // Logic to show domain sync status
+    $userAccounts = Capsule::table('mod_cloudflare_user_accounts')->get();
+    echo '<div class="cf-admin-card"><h4>Infrastructure Sync Hub</h4><p class="text-muted">Monitor global sync status across all client accounts.</p></div>';
+?>
+<?php elseif ($action == 'settings'): 
+    $settings = Capsule::table('mod_cloudflare_settings')->pluck('value', 'setting')->toArray();
+?>
+    <div class="cf-admin-card">
+        <div class="cf-admin-header"><h4>Module Configuration</h4></div>
+        <form method="post" action="<?=$modulelink?>&action=save_settings">
+            <div class="form-group">
+                <label>Fetch All Cloudflare Domains</label><br>
+                <input type="radio" name="settings[fetch_all_domains]" value="on" <?=($settings['fetch_all_domains']=='on'?'checked':'')?>> Enabled
+                <input type="radio" name="settings[fetch_all_domains]" value="off" <?=($settings['fetch_all_domains']=='off'?'checked':'')?>> Disabled
+                <p class="help-block">If enabled, the system will fetch all domains from connected Cloudflare accounts, not just those in WHMCS.</p>
+            </div>
+            <hr>
+            <button type="submit" class="btn btn-primary">Save Module Settings</button>
+        </form>
+    </div>
 <?php endif; ?>
     <?php
 }
@@ -556,7 +595,7 @@ function cloudflare_clientarea($vars) {
     $proxiedDomains = [];
     $whmcsDomains = Capsule::table('tbldomains')->where('userid', $clientId)->get();
     $whmcsDomainNames = $whmcsDomains->pluck('domain')->toArray();
-    $fetchAllDomains = isset($vars['fetch_all_domains']) && $vars['fetch_all_domains'] == 'on';
+    $fetchAllDomains = Capsule::table('mod_cloudflare_settings')->where('setting', 'fetch_all_domains')->value('value') == 'on';
 
     foreach ($userAccounts as $acc) {
         try {
@@ -636,6 +675,31 @@ function cloudflare_clientarea($vars) {
                 case 'deleteRecord':
                     $recordId = $_POST['record_id'];
                     $api->deleteDNSRecord($zoneId, $recordId);
+                    echo json_encode(['success' => true]); exit;
+                case 'editRecord':
+                    $recordId = $_POST['record_id'];
+                    $type = $_POST['type'];
+                    $name = $_POST['name'];
+                    $content = $_POST['content'];
+                    $proxied = isset($_POST['proxied']) && $_POST['proxied'] == 'true';
+                    $api->updateDNSRecord($zoneId, $recordId, $type, $name, $content, 1, $proxied);
+                    echo json_encode(['success' => true]); exit;
+                case 'purgeCache':
+                    $api->purgeCache($zoneId);
+                    echo json_encode(['success' => true]); exit;
+                case 'pauseZone':
+                    $pause = $_POST['pause'] == 'true';
+                    $api->pauseZone($zoneId, $pause);
+                    echo json_encode(['success' => true]); exit;
+                case 'syncDNS':
+                    $infraIds = Capsule::table('mod_cloudflare_product_infra')->whereIn('product_id', $activeServices->pluck('packageid'))->pluck('infra_id')->unique()->toArray();
+                    foreach ($infraIds as $infraId) {
+                        $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
+                        $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
+                        foreach ($templates as $t) {
+                            $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied);
+                        }
+                    }
                     echo json_encode(['success' => true]); exit;
             }
         } catch (\Exception $e) {

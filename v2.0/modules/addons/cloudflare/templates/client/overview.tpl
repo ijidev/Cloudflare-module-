@@ -193,7 +193,7 @@
                                 <td><strong>{$p.name}</strong></td>
                                 <td><span class="cf-tag-account">{$p.account_name}</span></td>
                                 <td><span class="cf-status-tag tag-active">{$p.status}</span></td>
-                                <td style="text-align:right;"><a href="index.php?m=cloudflare&action=manage&domain={$p.name}&acc={$p.account_id}" class="cf-btn-manage-sm">Manage Assets <i class="fa fa-chevron-right"></i></a></td>
+                                <td style="text-align:right;"><a href="index.php?m=cloudflare&action=manage&domain={$p.name}&acc={$p.account_id}" class="cf-btn-manage-sm">Manage DNS <i class="fa fa-chevron-right"></i></a></td>
                             </tr>
                         {foreachelse}<tr><td colspan="4" class="text-center" style="padding:40px; color:#64748b;">No active assets found.</td></tr>{/foreach}
                     </tbody>

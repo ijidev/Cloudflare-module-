@@ -66,7 +66,8 @@
                                             <i class="fa fa-cloud" style="color:#cbd5e1;" title="DNS Only"></i>
                                         {/if}
                                     </td>
-                                    <td style="text-align:right;">
+                                    <td style="text-align:right; white-space:nowrap;">
+                                        <button class="cf-btn-edit-sm" onclick='openEditModal({$record|json_encode})'><i class="fa fa-edit"></i></button>
                                         <button class="cf-btn-danger-sm" onclick="deleteRecord('{$record.id}')"><i class="fa fa-trash"></i></button>
                                     </td>
                                 </tr>
@@ -106,7 +107,8 @@
                 </div>
                 <div class="cf-card-body">
                     <button class="cf-btn-action-full" onclick="purgeCache()"><i class="fa fa-bolt"></i> Purge All Cache</button>
-                    <button class="cf-btn-action-full" style="margin-top:10px;"><i class="fa fa-refresh"></i> Re-Sync Infrastructure</button>
+                    <button class="cf-btn-action-full" style="margin-top:10px;" id="btnPause" onclick="togglePause()"><i class="fa fa-pause"></i> Pause Cloudflare</button>
+                    <button class="cf-btn-action-full" style="margin-top:10px;" onclick="syncDNS()"><i class="fa fa-refresh"></i> Sync DNS</button>
                 </div>
             </div>
 
@@ -124,14 +126,15 @@
     </div>
 </div>
 
-<!-- Add Record Modal -->
+<!-- Add/Edit Record Modal -->
 <div id="addRecordModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.5); z-index:9999; backdrop-filter:blur(4px); align-items:center; justify-content:center;">
     <div style="background:#fff; border-radius:16px; padding:24px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,0.1); margin:auto; max-height: 90vh; overflow-y: auto;">
-        <h3 style="margin:0 0 15px; font-weight:700;">Add DNS Record</h3>
-        <form id="addRecordForm" onsubmit="addRecord(event)">
+        <h3 id="modalTitle" style="margin:0 0 15px; font-weight:700;">Add DNS Record</h3>
+        <form id="recordForm" onsubmit="handleRecordSubmit(event)">
+            <input type="hidden" name="record_id" id="field-id">
             <div class="cf-form-group" style="margin-bottom:15px;">
                 <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Type</label>
-                <select name="type" class="cf-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid #e2e8f0;">
+                <select name="type" id="field-type" class="cf-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid #e2e8f0;">
                     <option value="A">A</option>
                     <option value="AAAA">AAAA</option>
                     <option value="CNAME">CNAME</option>
@@ -141,19 +144,19 @@
             </div>
             <div class="cf-form-group" style="margin-bottom:15px;">
                 <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Name</label>
-                <input type="text" name="name" class="cf-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid #e2e8f0;" placeholder="@" required>
+                <input type="text" name="name" id="field-name" class="cf-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid #e2e8f0;" placeholder="@" required>
             </div>
             <div class="cf-form-group" style="margin-bottom:15px;">
                 <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Content</label>
-                <input type="text" name="content" class="cf-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid #e2e8f0;" placeholder="192.0.2.1" required>
+                <input type="text" name="content" id="field-content" class="cf-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid #e2e8f0;" placeholder="192.0.2.1" required>
             </div>
             <div class="cf-form-group" style="margin-bottom:20px; display:flex; align-items:center; gap:10px;">
-                <input type="checkbox" name="proxied" value="true" checked id="proxyCheck">
-                <label for="proxyCheck" style="font-size:13px; font-weight:600; color:#0f172a; margin:0; cursor:pointer;">Proxied</label>
+                <input type="checkbox" name="proxied" value="true" checked id="field-proxied">
+                <label for="field-proxied" style="font-size:13px; font-weight:600; color:#0f172a; margin:0; cursor:pointer;">Proxied</label>
             </div>
             <div style="display:flex; justify-content:flex-end; gap:10px;">
                 <button type="button" onclick="$('#addRecordModal').fadeOut()" style="padding:10px 15px; border:1px solid #e2e8f0; background:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Cancel</button>
-                <button type="submit" style="padding:10px 15px; border:none; background:var(--cf-orange); color:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Add Record</button>
+                <button type="submit" id="btnSubmitRecord" style="padding:10px 15px; border:none; background:var(--cf-orange); color:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Save Record</button>
             </div>
         </form>
     </div>
@@ -163,41 +166,47 @@
 <script>
 function purgeCache() {
     Swal.fire({ title: 'Purging Cache...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-    setTimeout(() => { Swal.fire('Success', 'Edge cache has been purged.', 'success'); }, 1500);
-}
-function deleteAsset() {
-    Swal.fire({
-        title: 'Are you absolutely sure?',
-        text: "This domain will be completely removed from our Premium DNS network. This action cannot be undone.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'Yes, Delete Asset'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            Swal.fire({ title: 'Removing...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-            fetch('index.php?m=cloudflare', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `ajax=1&op=deleteZone&domain={/literal}{$domainName}{literal}&acc_id={/literal}{$account->id}{literal}`
-            }).then(r => r.json()).then(data => {
-                if (data.success) window.location.href = 'index.php?m=cloudflare&success=asset_deleted';
-                else Swal.fire('Error', data.message, 'error');
-            });
-        }
+    $.post('index.php?m=cloudflare', { ajax: '1', op: 'purgeCache', domain: '{$domainName}', acc_id: '{$account->id}' }, function(res) {
+        if (res.success) Swal.fire('Success', 'Edge cache has been purged.', 'success');
+        else Swal.fire('Error', res.message, 'error');
     });
 }
-function addRecord(e) {
+function togglePause() {
+    const isPaused = $('#btnPause').html().includes('Resume');
+    Swal.fire({ title: (isPaused ? 'Resuming...' : 'Pausing...'), allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+    $.post('index.php?m=cloudflare', { ajax: '1', op: 'pauseZone', domain: '{$domainName}', acc_id: '{$account->id}', pause: !isPaused }, function(res) {
+        if (res.success) window.location.reload();
+        else Swal.fire('Error', res.message, 'error');
+    });
+}
+function syncDNS() {
+    Swal.fire({ title: 'Syncing DNS...', text: 'Re-applying infrastructure templates...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+    $.post('index.php?m=cloudflare', { ajax: '1', op: 'syncDNS', domain: '{$domainName}', acc_id: '{$account->id}' }, function(res) {
+        if (res.success) window.location.reload();
+        else Swal.fire('Error', res.message, 'error');
+    });
+}
+function openEditModal(record) {
+    $('#modalTitle').text('Edit DNS Record');
+    $('#field-id').val(record.id);
+    $('#field-type').val(record.type);
+    $('#field-name').val(record.name);
+    $('#field-content').val(record.content);
+    $('#field-proxied').prop('checked', record.proxied);
+    $('#addRecordModal').css('display', 'flex').hide().fadeIn(200);
+}
+function handleRecordSubmit(e) {
     e.preventDefault();
-    const btn = $(e.target).find('button[type="submit"]');
-    btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Adding...');
+    const btn = $('#btnSubmitRecord');
+    const id = $('#field-id').val();
+    btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving...');
+    
     const formData = new FormData(e.target);
     const data = new URLSearchParams(formData);
     data.append('ajax', '1');
-    data.append('op', 'addRecord');
-    data.append('domain', '{/literal}{$domainName}{literal}');
-    data.append('acc_id', '{/literal}{$account->id}{literal}');
+    data.append('op', id ? 'editRecord' : 'addRecord');
+    data.append('domain', '{$domainName}');
+    data.append('acc_id', '{$account->id}');
     
     fetch('index.php?m=cloudflare', {
         method: 'POST',
@@ -205,7 +214,7 @@ function addRecord(e) {
         body: data
     }).then(r => r.json()).then(res => {
         if (res.success) window.location.reload();
-        else { Swal.fire('Error', res.message, 'error'); btn.prop('disabled', false).html('Add Record'); }
+        else { Swal.fire('Error', res.message, 'error'); btn.prop('disabled', false).html('Save Record'); }
     });
 }
 function deleteRecord(id) {
@@ -251,6 +260,8 @@ function deleteRecord(id) {
 /* Utils */
 .cf-btn-action-full { width: 100%; padding: 12px; border: 1px solid var(--cf-border); background: #fff; border-radius: 10px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; justify-content: center; font-size: 13px; }
 .cf-btn-primary-sm { background: var(--cf-orange); color: #fff; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 12px; cursor: pointer; }
+.cf-btn-edit-sm { background: #f1f5f9; color: #475569; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; margin-right: 5px; }
+.cf-btn-edit-sm:hover { background: #e2e8f0; }
 .cf-btn-danger-sm { background: #fee2e2; color: #dc2626; border: none; padding: 6px 12px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; }
 .cf-btn-danger-sm:hover { background: #fecaca; }
 .cf-status-tag { padding: 4px 10px; border-radius: 50px; font-size: 11px; font-weight: 700; }
@@ -280,6 +291,11 @@ input:checked + .cf-slider:before { transform: translateX(22px); }
     .cf-card-premium, .cf-card-danger { padding: 16px; border-radius: 12px; }
     .cf-card-header h3 { font-size: 15px; }
     .cf-btn-action-full, .cf-btn-danger-full { padding: 10px; font-size: 13px; }
+    
+    /* Responsive Table */
+    .cf-dashboard-table { min-width: auto; width: 100%; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .cf-dashboard-table th { padding: 10px 8px; font-size: 10px; }
+    .cf-dashboard-table td { padding: 10px 8px; font-size: 12px; }
 }
 
 .animate-fade-in { animation: fadeIn 0.4s ease-out; }
