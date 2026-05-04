@@ -1,55 +1,39 @@
-# Cloudflare Enterprise Management Module for WHMCS (v2.0)
+# Cloudflare Premium DNS Module for WHMCS (v2.2)
 
-A high-performance, fully integrated Cloudflare provisioning and management module for WHMCS. This module allows you to seamlessly offer Managed Cloudflare protection to your clients, while offering premium "Pro" features like Dedicated Sub-Accounts and BYOT (Bring Your Own Token).
+A high-fidelity, infrastructure-first Cloudflare management module designed exclusively for WHMCS. This module transforms the standard Cloudflare integration into a premium, white-labeled "Premium DNS" service, allowing hosting providers to seamlessly map infrastructure clusters to WHMCS products and automate DNS propagation.
+
+## Core Architecture
+
+This module abandons the flawed "Global Master Account" approach. Instead, it relies on strict **Infrastructure-Based Management** and **BYOT (Bring Your Own Token)**:
+
+1. **Infrastructure Clusters:** Administrators define physical servers or clusters, attaching them to specific WHMCS products.
+2. **Dynamic DNS Templates:** Each cluster has its own set of DNS templates (A records, CNAMEs, MX) using dynamic variables (`{domain}`, `{ip}`).
+3. **Client-Side BYOT:** Clients connect their own Cloudflare accounts via API Tokens or Global Keys.
+4. **Automated Sync:** Once connected, the module securely pushes the cluster's DNS templates to the client's Cloudflare account.
 
 ## Features
 
-- **Three Architecture Modes:**
-  - **BYOT (Bring Your Own Token):** Clients can bring their own personal Cloudflare API tokens (Recommended Free Tier).
-  - **Managed Core:** Domains are proxied through your master account (Free Tier - Shared Risk).
-  - **Dedicated Sub-Account:** Provisions an isolated Cloudflare account using the client's email via Tenant API (Pro Tier - Automatically hidden if admin lacks privileges).
-- **Asynchronous AJAX Dashboard:** A beautiful, responsive, SweetAlert2-powered dashboard for DNS management, Cache Purging, and Security Mode toggling. All actions execute instantly without page reloads.
-- **Intelligent Sync & DNS Reset:** A global "Sync DNS" button automatically initializes zones, detects conflicts, applies DNS templates (using either the client's hosting IP or the admin-defined **Default Parking IP**), and updates WHMCS nameservers in one click. Zero-downtime automated migration when switching from Managed to BYOT.
-- **Zero-Touch Provisioning:** Includes a WHMCS `DomainAdd` hook that automatically initializes Cloudflare protection the moment a domain is registered.
+- **Admin Toggle for Global Domain Sync:** Allow clients to manage *all* domains found in their Cloudflare account, or restrict management only to domains registered within your WHMCS instance.
+- **Glassmorphic Mobile-Optimized UI:** A highly polished, responsive client area utilizing modern CSS techniques to provide a premium user experience on all devices.
+- **Full DNS Record Management:** Clients can add, delete, and view their DNS records (A, AAAA, CNAME, TXT, MX) directly from the WHMCS client area without logging into Cloudflare.
+- **Edge Security Controls:** Toggle SSL/TLS modes and purge cache instantly via AJAX endpoints.
+- **Automated Access Control:** Clients can only manage infrastructure if they have an active WHMCS service mapped to an eligible Cloudflare Infrastructure Cluster.
 
----
+## Installation & Setup
 
-## Installation Guide
+1. **Upload:** Place the module folder in `/modules/addons/cloudflare/`
+2. **Activate:** Go to **System Settings -> Addon Modules** and activate "Cloudflare Manager".
+3. **Permissions:** Grant Full Administrator access.
+4. **Configure:** Check the "Fetch All Cloudflare Domains" toggle if you want the system to act as a universal domain manager.
 
-1. **Upload Files:** Upload the `cloudflare` folder to your WHMCS directory: `/modules/addons/cloudflare/`
-2. **Activate Module:** Go to your WHMCS Admin Area -> **System Settings** -> **Addon Modules**. Find "Cloudflare Manager" and click **Activate**.
-3. **Configure Permissions:** Click **Configure** on the module and grant Access Control to "Full Administrator".
-4. **Initial Setup:** Click **Save Changes**.
+## Admin Configuration (Clusters)
 
----
-
-## Admin Setup & Configuration
-
-1. **Access the Module:** Navigate to **Addons -> Cloudflare Manager** in the top WHMCS navigation menu.
-2. **Configure Master API:**
-   - **Master API Token:** Enter your Cloudflare Global API Key or API Token (Requires `Zone:Edit`, `DNS:Edit`, and `Account:Edit` permissions).
-   - **Master Account ID:** Your Cloudflare Enterprise/Partner Account ID.
-   - **Account Email:** The email address associated with your Cloudflare account.
-4. **Default Parking IP:** Enter the IP address (e.g. your main server or a "Coming Soon" page) to be used when a client syncs a domain that has no hosting account.
-5. **Save Configuration:** Click "Save Settings". The module will automatically verify your credentials.
-
-*(Note: Pricing and Recurring billing settings are managed directly within this interface. The module automatically generates invoices for clients who click "Upgrade Now" in the client area based on these settings.)*
-
----
+Navigate to **Addons -> Cloudflare Manager**.
+1. Create a new Infrastructure Cluster (select a WHMCS server or enter a manual IP).
+2. Click "Manage" on the cluster.
+3. Define your DNS Templates (e.g., Type A, Name `@`, Content `{ip}`).
+4. Go to the "Linked Products" tab and select which WHMCS products grant access to this cluster.
 
 ## Client Experience
 
-Clients can access the Cloudflare interface in two ways:
-1. **Domain Management Sidebar:** When viewing a specific domain (`clientarea.php?action=domaindetails`), a new "Cloudflare Management" link appears in the sidebar.
-2. **Primary Navigation:** A centralized "Cloudflare Manager" link is available in the primary "Services" dropdown, allowing clients to manage all their active domains from one unified dashboard.
-
-When a client selects **"Dedicated Sub-Account"**, the module automatically intercepts the request, forces the use of their registered WHMCS email, and attempts to provision the account. If the email is already in use at Cloudflare, it safely redirects them to use the BYOT option instead.
-
----
-
-## Technical Support
-
-If you encounter a blank page or API error, ensure that:
-1. Your server is running PHP 8.1+
-2. Your WHMCS installation has the required `tblhostingaddons` table intact.
-3. Your Cloudflare API Token has sufficient privileges.
+Clients will see a modern "Premium DNS" interface. They must first connect their Cloudflare account using an API token. Once connected, they can view their active assets, force-sync new domains to the infrastructure, and seamlessly manage DNS records.

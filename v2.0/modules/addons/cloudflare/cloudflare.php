@@ -37,7 +37,15 @@ function cloudflare_config() {
         'author' => 'everestserver.com',
         'language' => 'english',
         'version' => '2.2',
-        'fields' => []
+        'fields' => [
+            'fetch_all_domains' => [
+                'FriendlyName' => 'Fetch All Cloudflare Domains',
+                'Type' => 'yesno',
+                'Size' => '25',
+                'Default' => '',
+                'Description' => 'If enabled, the module will fetch and manage all domains found in the Cloudflare account. If disabled (default), it will only fetch domains associated with the WHMCS account.',
+            ]
+        ]
     ];
 }
 
@@ -547,6 +555,8 @@ function cloudflare_clientarea($vars) {
     $userAccounts = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $clientId)->get();
     $proxiedDomains = [];
     $whmcsDomains = Capsule::table('tbldomains')->where('userid', $clientId)->get();
+    $whmcsDomainNames = $whmcsDomains->pluck('domain')->toArray();
+    $fetchAllDomains = isset($vars['fetch_all_domains']) && $vars['fetch_all_domains'] == 'on';
 
     foreach ($userAccounts as $acc) {
         try {
@@ -554,6 +564,9 @@ function cloudflare_clientarea($vars) {
             $zones = $api->getZones();
             if ($zones) {
                 foreach ($zones as $z) {
+                    if (!$fetchAllDomains && !in_array($z['name'], $whmcsDomainNames)) {
+                        continue;
+                    }
                     $proxiedDomains[] = [
                         'name' => $z['name'],
                         'status' => $z['status'],
@@ -613,6 +626,17 @@ function cloudflare_clientarea($vars) {
                 case 'deleteZone':
                     $api->deleteZone($zoneId);
                     echo json_encode(['success' => true]); exit;
+                case 'addRecord':
+                    $type = $_POST['type'];
+                    $name = $_POST['name'];
+                    $content = $_POST['content'];
+                    $proxied = isset($_POST['proxied']) && $_POST['proxied'] == 'true';
+                    $api->addDNSRecord($zoneId, $type, $name, $content, 1, $proxied);
+                    echo json_encode(['success' => true]); exit;
+                case 'deleteRecord':
+                    $recordId = $_POST['record_id'];
+                    $api->deleteDNSRecord($zoneId, $recordId);
+                    echo json_encode(['success' => true]); exit;
             }
         } catch (\Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]); exit;
@@ -630,12 +654,23 @@ function cloudflare_clientarea($vars) {
             header("Location: index.php?m=cloudflare&error=invalid_account"); exit;
         }
 
+        // Fetch DNS records
+        try {
+            $api = new \WHMCS\Module\Addon\Cloudflare\API($account->api_token, $account->email);
+            $zoneId = $api->getZoneId($domain);
+            $dnsRecordsResp = $api->getDNSRecords($zoneId);
+            $dnsRecords = isset($dnsRecordsResp['result']) ? $dnsRecordsResp['result'] : [];
+        } catch (\Exception $e) {
+            $dnsRecords = [];
+        }
+
         return [
             'templatefile' => 'templates/client/manage',
             'vars' => [
                 'domainName' => $domain,
                 'account' => $account,
-                'companyname' => $GLOBALS['companyname']
+                'companyname' => $GLOBALS['companyname'],
+                'dnsRecords' => $dnsRecords
             ]
         ];
     }
