@@ -104,24 +104,26 @@ if ($clusters->count() > 0) {
 }
 echo "</div>";
 
-// Section: AJAX Authentication Simulation
+// Section: Template Check
 echo "<div class='card'>";
-echo "<h3>5. AJAX Security Simulation</h3>";
-$simAccId = 2; // From your screenshot
-echo "Simulating request for Account ID: <code>$simAccId</code> and Client ID: <code>$clientId</code>...<br>";
+echo "<h3>6. Infrastructure Templates Check (ID: 3)</h3>";
+$simInfraId = 3; 
+$templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $simInfraId)->get();
+echo "Templates found for Cluster #$simInfraId: <b class='" . ($templates->count() > 0 ? "success" : "error") . "'>" . $templates->count() . "</b><br>";
 
-$testAcc = Capsule::table('mod_cloudflare_user_accounts')->where('id', $simAccId)->where('client_id', $clientId)->first();
-if ($testAcc) {
-    echo "Query Result: <span class='success'>MATCH FOUND</span> (Name: {$testAcc->name})<br>";
-    echo "This request SHOULD succeed in the main module.<br>";
+if ($templates->count() > 0) {
+    echo "<table><thead><tr><th>Name</th><th>Type</th><th>Content</th></tr></thead><tbody>";
+    foreach ($templates as $t) {
+        echo "<tr><td><code>{$t->name}</code></td><td>{$t->type}</td><td><code>{$t->content}</code></td></tr>";
+    }
+    echo "</tbody></table>";
 } else {
-    echo "Query Result: <span class='error'>NOT FOUND</span><br>";
-    echo "Possible Reason: <br>";
-    $realAcc = Capsule::table('mod_cloudflare_user_accounts')->where('id', $simAccId)->first();
-    if ($realAcc) {
-        echo "- Account #$simAccId exists, but it belongs to Client ID: <b class='error'>{$realAcc->client_id}</b> (not $clientId)<br>";
-    } else {
-        echo "- Account #$simAccId does not exist in the database at all.<br>";
+    echo "<p class='error'>FAIL: No records exist in mod_cloudflare_templates for infra_id = $simInfraId</p>";
+    echo "<p class='info'>Checking ALL templates in database to find correct infra_id...</p>";
+    $allT = Capsule::table('mod_cloudflare_templates')->get();
+    echo "Total templates in DB: <b>" . $allT->count() . "</b><br>";
+    foreach ($allT as $at) {
+        echo "- Template for Infra ID: <b>{$at->infra_id}</b> (Name: {$at->name})<br>";
     }
 }
 echo "</div>";
