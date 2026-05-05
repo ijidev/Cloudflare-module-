@@ -41,11 +41,11 @@
             </div>
             <div class="cf-stats-container">
                 <div class="cf-stat-box">
-                    <span class="cf-stat-val">{$userAccounts|@count}</span>
+                    <span class="cf-stat-val">{if $userAccounts}{$userAccounts|@count}{else}0{/if}</span>
                     <span class="cf-stat-lab">Connected</span>
                 </div>
                 <div class="cf-stat-box">
-                    <span class="cf-stat-val">{$proxiedDomains|@count}</span>
+                    <span class="cf-stat-val">{if $proxiedDomains}{$proxiedDomains|@count}{else}0{/if}</span>
                     <span class="cf-stat-lab">Active Assets</span>
                 </div>
             </div>
@@ -72,7 +72,7 @@
                         <h3>Infrastructure Accounts</h3>
                         <p>Link your accounts via API to manage security settings.</p>
                     </div>
-                    {if $userAccounts|@count > 0}
+                    {if $userAccounts && $userAccounts|@count > 0}
                     <button class="cf-btn-primary" onclick="showAddAccount()"><i class="fa fa-plus"></i> Add Account</button>
                     {/if}
                 </div>
