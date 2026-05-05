@@ -165,18 +165,24 @@ function cloudflare_output($vars) {
     $action = $_REQUEST['action'] ?? 'infra';
     $modulelink = $vars['modulelink'];
 
-    // Helper for self-healing
+    // Helper for self-healing (Advanced Scan & Auto-Link)
     $repairInfra = function($infraId) {
         $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
         if (!$infra) return 0;
-        $linkedProducts = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $infraId)->pluck('product_id')->toArray();
-        $hosting = Capsule::table('tblhosting')->whereIn('packageid', $linkedProducts)->where('domainstatus', 'Active')->get();
+        
+        // Scan ALL active hosting services in WHMCS
+        $hosting = Capsule::table('tblhosting')->where('domainstatus', 'Active')->get();
         $repaired = 0;
         require_once __DIR__ . '/lib/API.php';
+        
         foreach ($hosting as $s) {
             $domain = trim($s->domain);
             if (!$domain) continue;
             
+            // Safety: Check if this product is already linked to ANOTHER cluster
+            $existingLink = Capsule::table('mod_cloudflare_product_infra')->where('product_id', $s->packageid)->first();
+            if ($existingLink && $existingLink->infra_id != $infraId) continue;
+
             $acc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $s->userid)->first();
             if (!$acc) continue;
             
@@ -184,7 +190,10 @@ function cloudflare_output($vars) {
                 $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
                 $zoneId = $api->getZoneId($domain);
                 
-                $isPointing = (gethostbyname($domain) === $infra->ip);
+                $publicIp = gethostbyname($domain);
+                $isPointing = ($publicIp === $infra->ip);
+                
+                // If public DNS doesn't match, check if it's already in CF pointing to us (proxied)
                 if (!$isPointing && $zoneId) {
                     $dnsResp = $api->getDNSRecords($zoneId);
                     foreach (($dnsResp['result'] ?? []) as $r) {
@@ -196,10 +205,18 @@ function cloudflare_output($vars) {
 
                 if (!$isPointing) continue;
 
+                // WE HAVE A MATCH! 
+                // 1. Auto-Link Product to Cluster if not already linked
+                if (!$existingLink) {
+                    Capsule::table('mod_cloudflare_product_infra')->insert(['product_id' => $s->packageid, 'infra_id' => $infraId]);
+                }
+
+                // 2. Auto-Sync to Cloudflare
                 if (!$zoneId) {
                     $resp = $api->createZone($domain, $acc->account_id);
                     $zoneId = $resp['result']['id'] ?? null;
                 }
+                
                 if ($zoneId) {
                     $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
                     foreach ($templates as $t) {
@@ -702,8 +719,8 @@ function cloudflare_output($vars) {
 }
 
 function cloudflare_clientarea($vars) {
-    if (!isset($_SESSION['uid'])) return "Access Denied";
-    $clientId = $_SESSION['uid'];
+    $clientId = (int)$vars['userid'];
+    if (!$clientId) return "Access Denied";
 
     // 1. Access Control Check
     $allowedProducts = Capsule::table('mod_cloudflare_product_infra')->pluck('infra_id', 'product_id')->toArray();
@@ -807,11 +824,22 @@ function cloudflare_clientarea($vars) {
         try {
             $accId = (int)$_POST['acc_id'];
             $domain = $_POST['domain'];
+            error_log("Cloudflare Debug: AJAX Op {$_POST['op']} for Domain: $domain, Acc ID: $accId, Client ID: $clientId");
+            
             $acc = Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->first();
-            if (!$acc) throw new Exception("Unauthorized account.");
+            if (!$acc) {
+                error_log("Cloudflare Error: Unauthorized access attempt for Acc ID $accId by Client $clientId");
+                throw new Exception("Unauthorized account.");
+            }
 
             $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
             $zoneId = $api->getZoneId($domain);
+            
+            error_log("Cloudflare Debug: Zone ID for $domain is " . ($zoneId ?: 'NOT FOUND'));
+
+            if (!$zoneId && !in_array($_POST['op'], ['addRecord', 'syncDNS'])) {
+                 throw new Exception("This domain is not active in Cloudflare. Please sync it first.");
+            }
 
             switch ($_POST['op']) {
                 case 'deleteZone':

@@ -169,7 +169,7 @@ function purgeCache() {
     $.post('index.php?m=cloudflare', { ajax: '1', op: 'purgeCache', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}' }, function(res) {
         if (res.success) Swal.fire('Success', 'Edge cache has been purged.', 'success');
         else Swal.fire('Error', res.message, 'error');
-    });
+    }).fail(() => { Swal.fire('Error', 'Connection failed. Please check your network or server logs.', 'error'); });
 }
 function togglePause() {
     const isPaused = $('#btnPause').html().includes('Resume');
@@ -177,19 +177,19 @@ function togglePause() {
     $.post('index.php?m=cloudflare', { ajax: '1', op: 'pauseZone', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}', pause: !isPaused }, function(res) {
         if (res.success) window.location.reload();
         else Swal.fire('Error', res.message, 'error');
-    });
+    }).fail(() => { Swal.fire('Error', 'Connection failed.', 'error'); });
 }
 function syncDNS() {
     Swal.fire({ title: 'Syncing DNS...', text: 'Re-applying infrastructure templates...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
     $.post('index.php?m=cloudflare', { ajax: '1', op: 'syncDNS', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}' }, function(res) {
         if (res.success) window.location.reload();
         else Swal.fire('Error', res.message, 'error');
-    });
+    }).fail(() => { Swal.fire('Error', 'Connection failed.', 'error'); });
 }
 function updateSecurity(setting, value) {
     $.post('index.php?m=cloudflare', { ajax: '1', op: 'updateSecurity', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}', setting: setting, value: value ? 'on' : 'off' }, function(res) {
         if (!res.success) Swal.fire('Error', res.message, 'error');
-    });
+    }).fail(() => { console.error('Security update failed'); });
 }
 function deleteAsset() {
     Swal.fire({
@@ -201,7 +201,7 @@ function deleteAsset() {
             $.post('index.php?m=cloudflare', { ajax: '1', op: 'deleteZone', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}' }, function(res) {
                 if (res.success) window.location.href = 'index.php?m=cloudflare';
                 else Swal.fire('Error', res.message, 'error');
-            });
+            }).fail(() => { Swal.fire('Error', 'Delete operation failed on the server.', 'error'); });
         }
     });
 }
