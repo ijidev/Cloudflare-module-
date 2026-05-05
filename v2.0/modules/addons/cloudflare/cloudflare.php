@@ -260,13 +260,22 @@ function cloudflare_output($vars) {
 
                 case 'update_products':
                     $infraId = (int)$_POST['infra_id'];
-                    Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $infraId)->delete();
-                    if (isset($_POST['products']) && is_array($_POST['products'])) {
-                        foreach ($_POST['products'] as $pid) {
-                            Capsule::table('mod_cloudflare_product_infra')->insert(['product_id' => (int)$pid, 'infra_id' => $infraId]);
+                    $products = $_POST['products'] ?? [];
+                    error_log("Cloudflare Debug: Saving products for Infra $infraId. Products: " . print_r($products, true));
+                    try {
+                        Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $infraId)->delete();
+                        if (is_array($products)) {
+                            foreach ($products as $pid) {
+                                // Double check if product is linked elsewhere to avoid PK violation
+                                Capsule::table('mod_cloudflare_product_infra')->where('product_id', (int)$pid)->delete();
+                                Capsule::table('mod_cloudflare_product_infra')->insert(['product_id' => (int)$pid, 'infra_id' => $infraId]);
+                            }
                         }
+                        echo json_encode(['success' => true]); exit;
+                    } catch (\Exception $e) {
+                        error_log("Cloudflare Error: Failed to save products: " . $e->getMessage());
+                        echo json_encode(['success' => false, 'message' => $e->getMessage()]); exit;
                     }
-                    echo json_encode(['success' => true]); exit;
 
                 case 'repair_infra':
                     $id = (int)$_POST['id'];
@@ -646,7 +655,9 @@ function cloudflare_output($vars) {
                     $.post('<?=$modulelink?>', $('#productForm').serialize(), function(res) {
                         btn.prop('disabled', false).html('<i class="fa fa-save"></i> Save Changes');
                         if (res.success) {
-                            $('#saveStatus').fadeIn().delay(2000).fadeOut();
+                            location.reload();
+                        } else {
+                            alert('Error: ' + res.message);
                         }
                     });
                 }
