@@ -1119,7 +1119,6 @@ function cloudflare_clientarea($vars) {
                     Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->update($data);
                     echo json_encode(['success' => true]); exit;
             }
-            }
         } catch (\Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]); exit;
         }
