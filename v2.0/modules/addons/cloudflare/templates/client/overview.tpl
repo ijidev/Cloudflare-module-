@@ -41,11 +41,11 @@
             </div>
             <div class="cf-stats-container">
                 <div class="cf-stat-box">
-                    <span class="cf-stat-val">{count($userAccounts)}</span>
+                    <span class="cf-stat-val">{$userAccounts|@count}</span>
                     <span class="cf-stat-lab">Connected</span>
                 </div>
                 <div class="cf-stat-box">
-                    <span class="cf-stat-val">{count($proxiedDomains)}</span>
+                    <span class="cf-stat-val">{$proxiedDomains|@count}</span>
                     <span class="cf-stat-lab">Active Assets</span>
                 </div>
             </div>
@@ -72,7 +72,7 @@
                         <h3>Infrastructure Accounts</h3>
                         <p>Link your accounts via API to manage security settings.</p>
                     </div>
-                    {if count($userAccounts) > 0}
+                    {if $userAccounts|@count > 0}
                     <button class="cf-btn-primary" onclick="showAddAccount()"><i class="fa fa-plus"></i> Add Account</button>
                     {/if}
                 </div>
@@ -85,11 +85,14 @@
                                 <h4 style="margin:0 0 5px; font-weight:700;">{$acc->name}</h4>
                                 <span class="cf-badge" style="background:#f1f5f9; color:#475569; padding:4px 8px; border-radius:4px; font-size:11px;">{$acc->email|default:'API Token Auth'}</span>
                             </div>
-                            <form method="post" onsubmit="return confirm('Disconnect this account?')">
-                                <input type="hidden" name="action" value="deleteAccount">
-                                <input type="hidden" name="id" value="{$acc->id}">
-                                <button type="submit" style="background:none; border:none; color:#ef4444; cursor:pointer;"><i class="fa fa-trash"></i></button>
-                            </form>
+                            <div style="display:flex; gap:10px;">
+                                <button type="button" onclick='showEditAccount({$acc|json_encode})' style="background:none; border:none; color:var(--cf-gray); cursor:pointer;"><i class="fa fa-edit"></i></button>
+                                <form method="post" onsubmit="return confirm('Disconnect this account?')">
+                                    <input type="hidden" name="action" value="deleteAccount">
+                                    <input type="hidden" name="id" value="{$acc->id}">
+                                    <button type="submit" style="background:none; border:none; color:#ef4444; cursor:pointer;"><i class="fa fa-trash"></i></button>
+                                </form>
+                            </div>
                         </div>
                         <div style="margin-top:20px; font-size:12px; color:#64748b;">
                             <i class="fa fa-clock-o"></i> Linked: {$acc->created_at|date_format}
@@ -233,33 +236,34 @@
 .cf-btn-sync-all:hover { background: #e67616; }
 </style>
 
-<!-- Sync Domain Modal -->
-<div id="syncModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.5); z-index:9999; backdrop-filter:blur(4px); align-items:center; justify-content:center;">
-    <div style="background:#fff; border-radius:16px; padding:24px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,0.1); margin:auto;">
-        <h3 style="margin:0 0 15px; font-weight:700;">Initialize Domain Sync</h3>
-        <p style="font-size: 13px; color: #64748b; margin-bottom: 20px;">To correctly sync DNS records, please select the target hosting service this domain should point to.</p>
-        <form id="syncForm" onsubmit="handleSyncSubmit(event)">
-            <input type="hidden" name="domain" id="sync-domain-field">
+    </div>
+</div>
+
+<!-- Edit Account Modal -->
+<div id="editAccountModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.5); z-index:9999; backdrop-filter:blur(4px); align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:16px; padding:24px; width:90%; max-width:450px; box-shadow:0 10px 25px rgba(0,0,0,0.1); margin:auto;">
+        <h3 style="margin:0 0 15px; font-weight:700;">Edit Cloudflare Account</h3>
+        <form id="editAccountForm" onsubmit="handleEditAccount(event)">
+            <input type="hidden" name="id" id="edit-acc-id">
             <div class="cf-form-group" style="margin-bottom:15px;">
-                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Select Cloudflare Account</label>
-                <select name="acc" class="cf-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid #e2e8f0;" required>
-                    {foreach from=$userAccounts item=acc}
-                        <option value="{$acc->id}">{$acc->name}</option>
-                    {/foreach}
-                </select>
+                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Account Label</label>
+                <input type="text" name="name" id="edit-acc-name" class="cf-input" required>
+            </div>
+            <div class="cf-form-group" style="margin-bottom:15px;">
+                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Cloudflare Account ID</label>
+                <input type="text" name="account_id" id="edit-acc-accountid" class="cf-input" required>
+            </div>
+            <div class="cf-form-group" style="margin-bottom:15px;">
+                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Cloudflare Email (Optional for Tokens)</label>
+                <input type="email" name="email" id="edit-acc-email" class="cf-input">
             </div>
             <div class="cf-form-group" style="margin-bottom:20px;">
-                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Select Active Service</label>
-                <select name="service_id" class="cf-input" style="width:100%; padding:10px; border-radius:8px; border:1px solid #e2e8f0;" required>
-                    <option value="">-- Choose Target Hosting --</option>
-                    {foreach from=$validServices item=s}
-                        <option value="{$s.id}">{$s.domain} ({$s.product_name})</option>
-                    {/foreach}
-                </select>
+                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">New API Token / Global Key (Leave blank to keep current)</label>
+                <input type="password" name="api_token" class="cf-input">
             </div>
             <div style="display:flex; justify-content:flex-end; gap:10px;">
-                <button type="button" onclick="$('#syncModal').fadeOut()" style="padding:10px 15px; border:1px solid #e2e8f0; background:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Cancel</button>
-                <button type="submit" id="btnConfirmSync" style="padding:10px 15px; border:none; background:var(--cf-orange); color:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Initialize Infrastructure</button>
+                <button type="button" onclick="$('#editAccountModal').fadeOut()" style="padding:10px 15px; border:1px solid #e2e8f0; background:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Cancel</button>
+                <button type="submit" class="cf-btn-primary">Save Changes</button>
             </div>
         </form>
     </div>
@@ -308,6 +312,26 @@ function handleSyncSubmit(e) {
     
     Swal.fire({ title: 'Initializing Sync...', text: 'Connecting to Cloudflare...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
     window.location.href = `index.php?m=cloudflare&action=manage&domain=${domain}&acc=${accId}&trigger_sync=1&service_id=${serviceId}`;
+}
+function showEditAccount(acc) {
+    $('#edit-acc-id').val(acc.id);
+    $('#edit-acc-name').val(acc.name);
+    $('#edit-acc-accountid').val(acc.account_id);
+    $('#edit-acc-email').val(acc.email);
+    $('#editAccountModal').css('display', 'flex').hide().fadeIn(200);
+}
+function handleEditAccount(e) {
+    e.preventDefault();
+    const data = $(e.target).serialize() + '&ajax=1&op=editAccount';
+    Swal.fire({ title: 'Saving...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+    $.post('index.php?m=cloudflare', data, function(res) {
+        if (res.success) {
+            Swal.fire('Saved!', 'Account updated successfully.', 'success');
+            setTimeout(() => { window.location.reload(); }, 1500);
+        } else {
+            Swal.fire('Error', res.message, 'error');
+        }
+    });
 }
 </script>
 

@@ -142,15 +142,25 @@ function cloudflare_deactivate() {
 function cloudflare_output($vars) {
     // Self-healing Database Schema (Aggressive Check)
     try {
-        // mod_cloudflare_product_infra
-        if (!Capsule::schema()->hasTable('mod_cloudflare_product_infra')) {
-            Capsule::schema()->create('mod_cloudflare_product_infra', function ($table) {
-                $table->integer('product_id')->primary();
+        // Infrastructure IP History
+        if (!Capsule::schema()->hasTable('mod_cloudflare_infrastructure_ips')) {
+            Capsule::schema()->create('mod_cloudflare_infrastructure_ips', function ($table) {
+                $table->increments('id');
                 $table->integer('infra_id');
+                $table->string('ip', 64);
+                $table->timestamp('created_at')->useCurrent();
             });
-        } elseif (!Capsule::schema()->hasColumn('mod_cloudflare_product_infra', 'infra_id')) {
-            Capsule::schema()->table('mod_cloudflare_product_infra', function ($table) {
-                $table->integer('infra_id')->after('product_id');
+        }
+
+        // Module Logs
+        if (!Capsule::schema()->hasTable('mod_cloudflare_logs')) {
+            Capsule::schema()->create('mod_cloudflare_logs', function ($table) {
+                $table->increments('id');
+                $table->integer('client_id')->default(0);
+                $table->string('domain', 255)->nullable();
+                $table->string('action', 64);
+                $table->text('details')->nullable();
+                $table->timestamp('created_at')->useCurrent();
             });
         }
 
@@ -546,27 +556,33 @@ function cloudflare_output($vars) {
             </form>
         </div>
         <table class="cf-table-admin">
-            <thead><tr><th>Cluster Name</th><th>Primary IP</th><th>Templates</th><th>Linked Products</th><th style="text-align:right;">Actions</th></tr></thead>
+            <thead><tr><th>Cluster Name</th><th>Primary IP</th><th>Templates</th><th>Linked Products</th><th>Active Assets</th><th style="text-align:right;">Actions</th></tr></thead>
             <tbody>
                 <?php foreach ($infras as $i): 
                     $tCount = Capsule::table('mod_cloudflare_templates')->where('infra_id', $i->id)->count();
                     $pCount = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $i->id)->count();
                     
                     $linkedProducts = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $i->id)->pluck('product_id')->toArray();
-                    $aCount = Capsule::table('tblhosting')->whereIn('packageid', $linkedProducts)->where('domainstatus', 'Active')->count();
+                    $aCount = !empty($linkedProducts) ? Capsule::table('tblhosting')->whereIn('packageid', $linkedProducts)->where('domainstatus', 'Active')->count() : 0;
                 ?>
                 <tr>
                     <td><strong><?=$i->name?></strong></td>
                     <td><code><?=$i->ip?></code></td>
                     <td><span class="label label-info"><?=$tCount?> Records</span></td>
                     <td><span class="label label-warning"><?=$pCount?> Plans</span></td>
-                    <td><span class="label label-success"><?=$aCount?> Active Assets</span></td>
+                    <td><span class="label label-success"><?=$aCount?> Assets</span></td>
                     <td style="text-align:right;">
-                        <a href="<?=$modulelink?>&action=manage_infra&id=<?=$i->id?>" class="btn btn-default btn-xs">Manage</a>
-                        <form method="post" action="<?=$modulelink?>&action=delete_infra" style="display:inline;" onsubmit="return confirm('Delete this infrastructure and all its templates?')">
-                            <input type="hidden" name="id" value="<?=$i->id?>">
-                            <button type="submit" class="btn btn-danger btn-xs"><i class="fa fa-trash"></i></button>
-                        </form>
+                        <div class="dropdown" style="display:inline-block;">
+                            <button class="btn btn-default btn-xs dropdown-toggle" type="button" data-toggle="dropdown"><i class="fa fa-ellipsis-v"></i></button>
+                            <ul class="dropdown-menu dropdown-menu-right">
+                                <li><a href="<?=$modulelink?>&action=manage_infra&id=<?=$i->id?>&tab=settings"><i class="fa fa-edit"></i> Edit Cluster</a></li>
+                                <li><a href="<?=$modulelink?>&action=repair_infra&id=<?=$i->id?>"><i class="fa fa-refresh"></i> Sync Products</a></li>
+                                <li><a href="<?=$modulelink?>&action=mass_sync_infra&infra_id=<?=$i->id?>" onclick="return confirm('Sync DNS for all domains on this cluster?')"><i class="fa fa-cloud"></i> Sync DNS Hub</a></li>
+                                <li class="divider"></li>
+                                <li><a href="<?=$modulelink?>&action=delete_infra&id=<?=$i->id?>" onclick="return confirm('Delete cluster?')" style="color:red;"><i class="fa fa-trash"></i> Delete</a></li>
+                            </ul>
+                        </div>
+                        <a href="<?=$modulelink?>&action=manage_infra&id=<?=$i->id?>" class="btn btn-primary btn-xs">Manage</a>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -1055,7 +1071,8 @@ function cloudflare_clientarea($vars) {
                     $api->pauseZone($zoneId, $pause);
                     echo json_encode(['success' => true]); exit;
                 case 'syncDNS':
-                    $infraIds = Capsule::table('mod_cloudflare_product_infra')->whereIn('product_id', $activeServices->pluck('packageid'))->pluck('infra_id')->unique()->toArray();
+                    $services = Capsule::table('tblhosting')->where('userid', $clientId)->where('domainstatus', 'Active')->get();
+                    $infraIds = Capsule::table('mod_cloudflare_product_infra')->whereIn('product_id', $services->pluck('packageid'))->pluck('infra_id')->unique()->toArray();
                     foreach ($infraIds as $infraId) {
                         $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
                         $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
@@ -1088,6 +1105,20 @@ function cloudflare_clientarea($vars) {
                     // But to "remember" this domain's product, we'll store it in logs and ensure the sync logic can find it.
                     $logAction($clientId, $domain, 'DOMAIN_MAPPING', "Mapped to Service #$serviceId (Type: {$_POST['type']})");
                     echo json_encode(['success' => true]); exit;
+
+                case 'editAccount':
+                    $data = [
+                        'name' => $_POST['name'],
+                        'account_id' => $_POST['account_id'],
+                        'email' => $_POST['email'] ?: '',
+                        'updated_at' => date('Y-m-d H:i:s')
+                    ];
+                    if (!empty($_POST['api_token'])) $data['api_token'] = $_POST['api_token'];
+                    if (!empty($_POST['global_key'])) $data['api_token'] = $_POST['global_key'];
+
+                    Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->update($data);
+                    echo json_encode(['success' => true]); exit;
+            }
             }
         } catch (\Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]); exit;
