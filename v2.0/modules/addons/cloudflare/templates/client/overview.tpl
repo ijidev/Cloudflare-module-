@@ -16,7 +16,7 @@
         <div class="cf-eligibility-card">
             <h3>How to unlock?</h3>
             <div class="cf-eligible-grid">
-                {foreach from=$eligibleProducts item=p}
+                {foreach from=$eligibleProducts|default:[] item=p}
                     <div class="cf-plan-card">
                         <div class="cf-plan-icon"><i class="fa fa-server"></i></div>
                         <h4>{$p->name}</h4>
@@ -78,7 +78,7 @@
                 </div>
                 
                 <div class="cf-account-grid">
-                    {foreach from=$userAccounts item=acc}
+                    {foreach from=$userAccounts|default:[] item=acc}
                     <div class="cf-account-card">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                             <div>
@@ -191,7 +191,7 @@
                 <table class="cf-dashboard-table">
                     <thead><tr><th>Domain Name</th><th>Account</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
                     <tbody>
-                        {foreach from=$proxiedDomains item=p}
+                        {foreach from=$proxiedDomains|default:[] item=p}
                             <tr>
                                 <td><strong>{$p.name}</strong></td>
                                 <td><span class="cf-tag-account">{$p.account_name}</span></td>
@@ -213,9 +213,9 @@
                 <table class="cf-dashboard-table">
                     <thead><tr><th>Domain Name</th><th>Status</th><th style="text-align:right;">Infrastructure Status</th></tr></thead>
                     <tbody>
-                        {foreach from=$domains item=d}
+                        {foreach from=$domains|default:[] item=d}
                             {assign var="isProxied" value=false}
-                            {foreach from=$proxiedDomains item=p}{if $p.name == $d->domain}{assign var="isProxied" value=true}{/if}{/foreach}
+                            {foreach from=$proxiedDomains|default:[] item=p}{if $p.name == $d->domain}{assign var="isProxied" value=true}{/if}{/foreach}
                             <tr>
                                 <td><strong>{$d->domain}</strong></td>
                                 <td><span class="label label-default">{$d->status}</span></td>

@@ -948,10 +948,12 @@ function cloudflare_clientarea($vars) {
 
     // 2. Data Aggregation (Multi-Account BYOT)
     require_once __DIR__ . '/lib/API.php';
-    $userAccounts = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $clientId)->get();
+    $accounts = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $clientId)->get();
+    $userAccounts = $accounts ? $accounts->toArray() : [];
+    
     $proxiedDomains = [];
     $whmcsDomains = Capsule::table('tbldomains')->where('userid', $clientId)->get();
-    $whmcsDomainNames = $whmcsDomains->pluck('domain')->toArray();
+    $whmcsDomainNames = $whmcsDomains ? $whmcsDomains->pluck('domain')->toArray() : [];
     $fetchAllDomains = Capsule::table('mod_cloudflare_settings')->where('setting', 'fetch_all_domains')->value('value') == 'on';
     
     $validServices = [];
@@ -965,7 +967,7 @@ function cloudflare_clientarea($vars) {
         }
     }
 
-    foreach ($userAccounts as $acc) {
+    foreach ($accounts as $acc) {
         try {
             $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
             $zones = $api->getZones();
@@ -1202,8 +1204,8 @@ function cloudflare_clientarea($vars) {
                 'settings' => $cfSettings,
                 'dnsError' => $dnsError,
                 'mappingRequired' => $mappingRequired,
-                'clientLogs' => Capsule::table('mod_cloudflare_logs')->where('client_id', $clientId)->where('domain', $domain)->orderBy('id', 'desc')->get(),
-                'activeServices' => $activeServices
+                'clientLogs' => Capsule::table('mod_cloudflare_logs')->where('client_id', $clientId)->where('domain', $domain)->orderBy('id', 'desc')->get()->toArray() ?: [],
+                'activeServices' => $activeServices ? $activeServices->toArray() : []
             ]
         ];
     }
@@ -1212,10 +1214,10 @@ function cloudflare_clientarea($vars) {
         'templatefile' => 'templates/client/overview',
         'vars' => [
             'restricted' => false,
-            'userAccounts' => $userAccounts,
-            'proxiedDomains' => $proxiedDomains,
-            'domains' => $whmcsDomains,
-            'validServices' => $validServices,
+            'userAccounts' => $userAccounts ?: [],
+            'proxiedDomains' => $proxiedDomains ?: [],
+            'domains' => $whmcsDomains ? $whmcsDomains->toArray() : [],
+            'validServices' => $validServices ?: [],
             'companyname' => $GLOBALS['companyname']
         ]
     ];

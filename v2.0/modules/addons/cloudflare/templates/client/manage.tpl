@@ -55,7 +55,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {foreach from=$dnsRecords item=record}
+                            {foreach from=$dnsRecords|default:[] item=record}
                                 <tr>
                                     <td><span class="cf-status-tag" style="background:#f1f5f9; color:#475569;">{$record.type}</span></td>
                                     <td><strong>{$record.name}</strong></td>
@@ -110,7 +110,7 @@
                     <table class="cf-table" style="font-size:12px;">
                         <thead><tr><th>Date</th><th>Action</th><th>Details</th></tr></thead>
                         <tbody>
-                            {foreach from=$clientLogs item=log}
+                            {foreach from=$clientLogs|default:[] item=log}
                                 <tr>
                                     <td><small>{$log->created_at|date_format:"%b %e, %H:%M"}</small></td>
                                     <td><span class="cf-status-tag" style="background:#e0f2fe; color:#0369a1;">{$log->action}</span></td>
