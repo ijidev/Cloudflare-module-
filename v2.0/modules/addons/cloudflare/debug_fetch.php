@@ -104,38 +104,24 @@ if ($clusters->count() > 0) {
 }
 echo "</div>";
 
-// Section: Account Privileges
+// Section: AJAX Authentication Simulation
 echo "<div class='card'>";
-echo "<h3>4. Connected Account Privileges</h3>";
-if ($clientId) {
-    $myAccs = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $clientId)->get();
-    if ($myAccs->count() > 0) {
-        foreach ($myAccs as $ma) {
-            echo "<h4>Account: {$ma->name} ({$ma->email})</h4>";
-            try {
-                $api = new API($ma->api_token, $ma->email);
-                // Test token permissions by fetching a simple endpoint
-                $ch = curl_init("https://api.cloudflare.com/client/v4/user/tokens/verify");
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer {$ma->api_token}", "Content-Type: application/json"]);
-                curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                $resp = json_decode(curl_exec($ch), true);
-                curl_close($ch);
-                
-                if (isset($resp['success']) && $resp['success']) {
-                    echo "Token Validity: <span class='success'>VALID</span><br>";
-                    echo "Status: <span class='info'>{$resp['result']['status']}</span><br>";
-                } else {
-                    echo "Token Validity: <span class='error'>INVALID / RESTRICTED</span><br>";
-                    echo "<pre>" . print_r($resp, true) . "</pre>";
-                }
-            } catch (\Exception $e) {
-                echo "Privilege Check Failed: " . $e->getMessage();
-            }
-        }
-    } else {
-        echo "<span class='warning'>No accounts linked to your client ID.</span>";
-    }
+echo "<h3>5. AJAX Security Simulation</h3>";
+$simAccId = 2; // From your screenshot
+echo "Simulating request for Account ID: <code>$simAccId</code> and Client ID: <code>$clientId</code>...<br>";
+
+$testAcc = Capsule::table('mod_cloudflare_user_accounts')->where('id', $simAccId)->where('client_id', $clientId)->first();
+if ($testAcc) {
+    echo "Query Result: <span class='success'>MATCH FOUND</span> (Name: {$testAcc->name})<br>";
+    echo "This request SHOULD succeed in the main module.<br>";
 } else {
-    echo "<span class='warning'>Log in to view your specific account privileges.</span>";
+    echo "Query Result: <span class='error'>NOT FOUND</span><br>";
+    echo "Possible Reason: <br>";
+    $realAcc = Capsule::table('mod_cloudflare_user_accounts')->where('id', $simAccId)->first();
+    if ($realAcc) {
+        echo "- Account #$simAccId exists, but it belongs to Client ID: <b class='error'>{$realAcc->client_id}</b> (not $clientId)<br>";
+    } else {
+        echo "- Account #$simAccId does not exist in the database at all.<br>";
+    }
 }
 echo "</div>";
