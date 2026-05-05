@@ -1,39 +1,67 @@
-# Cloudflare Premium DNS Module for WHMCS (v2.2)
+# Cloudflare Premium DNS Infrastructure for WHMCS
+### The Ultimate Self-Healing DNS Management Solution
 
-A high-fidelity, infrastructure-first Cloudflare management module designed exclusively for WHMCS. This module transforms the standard Cloudflare integration into a premium, white-labeled "Premium DNS" service, allowing hosting providers to seamlessly map infrastructure clusters to WHMCS products and automate DNS propagation.
+Transform your WHMCS platform into a high-performance, white-labeled DNS hosting powerhouse. This module bridges the gap between Cloudflare's world-class performance and your server infrastructure, offering automated "Self-Healing" capabilities that ensure your clients' DNS is always perfectly synchronized with their hosting.
 
-## Core Architecture
+---
 
-This module abandons the flawed "Global Master Account" approach. Instead, it relies on strict **Infrastructure-Based Management** and **BYOT (Bring Your Own Token)**:
+## 🚀 Key Features
 
-1. **Infrastructure Clusters:** Administrators define physical servers or clusters, attaching them to specific WHMCS products.
-2. **Dynamic DNS Templates:** Each cluster has its own set of DNS templates (A records, CNAMEs, MX) using dynamic variables (`{domain}`, `{ip}`).
-3. **Client-Side BYOT:** Clients connect their own Cloudflare accounts via API Tokens or Global Keys.
-4. **Automated Sync:** Once connected, the module securely pushes the cluster's DNS templates to the client's Cloudflare account.
+### 1. Infrastructure-First "Self-Healing" Sync
+Our proprietary sync engine doesn't just wait for users to add domains. It proactively crawls your WHMCS active services and cross-references them with Cloudflare zones.
+- **Auto-Discovery**: Identifies domains pointing to your cluster IPs (A records).
+- **Auto-Linking**: Automatically maps discovered domains to the correct WHMCS product.
+- **Auto-Sync**: Applies cluster-specific DNS templates (A, CNAME, MX, TXT) instantly.
 
-## Features
+### 2. Intelligent IP Migration (Zero-Downtime Updates)
+Changing server IPs? No problem. The module tracks historical Cluster IPs.
+- **IP Retention**: Stores a history of old IPs.
+- **Seamless Migration**: When a sync is triggered, it identifies domains pointing to *old* IPs and automatically migrates them to the *new* IP in Cloudflare.
+- **Audit Logs**: Both Admin and Client see exactly when and how their records were updated.
 
-- **Admin Toggle for Global Domain Sync:** Allow clients to manage *all* domains found in their Cloudflare account, or restrict management only to domains registered within your WHMCS instance.
-- **Glassmorphic Mobile-Optimized UI:** A highly polished, responsive client area utilizing modern CSS techniques to provide a premium user experience on all devices.
-- **Full DNS Record Management:** Clients can add, delete, and view their DNS records (A, AAAA, CNAME, TXT, MX) directly from the WHMCS client area without logging into Cloudflare.
-- **Edge Security Controls:** Toggle SSL/TLS modes and purge cache instantly via AJAX endpoints.
-- **Automated Access Control:** Clients can only manage infrastructure if they have an active WHMCS service mapped to an eligible Cloudflare Infrastructure Cluster.
+### 3. Premium Client Dashboard
+A stunning, glassmorphic management interface designed for the modern web.
+- **Mobile-First Design**: Fully responsive UI that feels like a native app.
+- **Full DNS Control**: Clients can manage A, CNAME, MX, and TXT records with custom TTLs.
+- **Edge Security**: One-click toggles for "Always Use HTTPS" and "Automatic HTTPS Rewrites".
+- **Quick Actions**: Purge Edge Cache and Pause Cloudflare without leaving WHMCS.
 
-## Installation & Setup
+### 4. Enterprise-Grade Security
+- **WHM Verification**: Optionally verify that a domain is actually an "Addon Domain" on the cPanel/WHM server before allowing management.
+- **Ownership Lockdown**: Multi-account BYOT (Bring Your Own Token) support ensures clients only manage what they own.
+- **Account Verification**: Every AJAX call is gated by ownership checks against the WHMCS session.
 
-1. **Upload:** Place the module folder in `/modules/addons/cloudflare/`
-2. **Activate:** Go to **System Settings -> Addon Modules** and activate "Cloudflare Manager".
-3. **Permissions:** Grant Full Administrator access.
-4. **Configure:** Check the "Fetch All Cloudflare Domains" toggle if you want the system to act as a universal domain manager.
+### 5. Detailed Audit Logs
+Transparency for you and your clients.
+- **Admin Logs**: Track global infrastructure changes and automated repairs.
+- **Client History**: Clients can view a timeline of DNS changes, including old vs. new values.
 
-## Admin Configuration (Clusters)
+---
 
-Navigate to **Addons -> Cloudflare Manager**.
-1. Create a new Infrastructure Cluster (select a WHMCS server or enter a manual IP).
-2. Click "Manage" on the cluster.
-3. Define your DNS Templates (e.g., Type A, Name `@`, Content `{ip}`).
-4. Go to the "Linked Products" tab and select which WHMCS products grant access to this cluster.
+## 🛠 Technical Architecture
 
-## Client Experience
+- **Backend**: PHP 7.4+ with Laravel-style Capsule DB integration.
+- **Frontend**: Modern JS (jQuery/Swal2) with glassmorphic CSS.
+- **API**: Full Cloudflare v4 API implementation.
+- **Integration**: Plugs directly into WHMCS Addon and Hook systems.
 
-Clients will see a modern "Premium DNS" interface. They must first connect their Cloudflare account using an API token. Once connected, they can view their active assets, force-sync new domains to the infrastructure, and seamlessly manage DNS records.
+---
+
+## 📦 Installation & Setup
+
+1.  **Upload**: Move the `modules/addons/cloudflare` folder to your WHMCS installation.
+2.  **Activate**: Navigate to `Setup -> Addon Modules` and activate "Cloudflare Manager".
+3.  **Configure**: Set your Master API Token and Account ID in the General Settings.
+4.  **Build Clusters**: Create your Infrastructure Clusters and define your DNS Templates.
+5.  **Sync**: Run the "Global Sync Hub" to watch your infrastructure map itself!
+
+---
+
+## 📜 Roadmap
+- [x] v2.0: Self-Healing & IP Migration
+- [x] v2.1: WHM Addon Verification
+- [ ] v2.3: Support for Firewall Rules
+- [ ] v2.5: Multi-CDN Integration
+
+---
+*Developed with ❤️ for premium hosting providers.*
