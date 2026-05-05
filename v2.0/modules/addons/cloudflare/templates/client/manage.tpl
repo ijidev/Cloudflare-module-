@@ -208,9 +208,14 @@ function togglePause() {
 function syncDNS() {
     Swal.fire({ title: 'Syncing DNS...', text: 'Re-applying infrastructure templates...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
     $.post('index.php?m=cloudflare', { ajax: '1', op: 'syncDNS', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}' }, function(res) {
-        if (res.success) window.location.reload();
-        else Swal.fire('Error', res.message, 'error');
-    }).fail(() => { Swal.fire('Error', 'Connection failed.', 'error'); });
+        if (res.success) {
+            Swal.fire('Success', 'Successfully synchronized ' + (res.count || 0) + ' infrastructure records.', 'success').then(() => {
+                window.location.reload();
+            });
+        } else {
+            Swal.fire('Sync Failed', res.message, 'error');
+        }
+    }).fail(() => { Swal.fire('Error', 'Connection failed. Please check your network.', 'error'); });
 }
 function updateSecurity(setting, value) {
     $.post('index.php?m=cloudflare', { ajax: '1', op: 'updateSecurity', domain: '{/literal}{$domainName}{literal}', acc_id: '{/literal}{$account->id}{literal}', setting: setting, value: value ? 'on' : 'off' }, function(res) {
@@ -322,6 +327,7 @@ function deleteRecord(id) {
 .cf-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
 input:checked + .cf-slider { background-color: var(--cf-orange); }
 input:checked + .cf-slider:before { transform: translateX(22px); }
+.cf-switch input { position: absolute; opacity: 0; cursor: pointer; height: 100%; width: 100%; z-index: 2; margin: 0; }
 
 /* Mobile Optimizations */
 @media (max-width: 768px) {

@@ -1042,7 +1042,14 @@ function cloudflare_clientarea($vars) {
             $domain = $_POST['domain'];
             error_log("Cloudflare Debug: AJAX Op {$_POST['op']} for Domain: $domain, Acc ID: $accId, Client ID: $clientId");
             
-            $acc = Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->first();
+                        $acc = Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->first();
+            
+            if (!$acc) {
+                // Fallback check: Sometimes session ID might be different from $vars['userid']
+                $ca = new \WHMCS\ClientArea();
+                $clientId = (int)$ca->getUserID();
+                $acc = Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->first();
+            }
             if (!$acc) {
                 error_log("Cloudflare Error: Unauthorized access attempt for Acc ID $accId by Client $clientId");
                 throw new Exception("Unauthorized account.");
@@ -1090,14 +1097,19 @@ function cloudflare_clientarea($vars) {
                 case 'syncDNS':
                     $services = Capsule::table('tblhosting')->where('userid', $clientId)->where('domainstatus', 'Active')->get();
                     $infraIds = Capsule::table('mod_cloudflare_product_infra')->whereIn('product_id', $services->pluck('packageid'))->pluck('infra_id')->unique()->toArray();
+                                        $count = 0;
                     foreach ($infraIds as $infraId) {
                         $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
                         $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
                         foreach ($templates as $t) {
-                            try { $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied); } catch (\Exception $e) {}
+                            try { 
+                                $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied); 
+                                $count++;
+                            } catch (\Exception $e) {}
                         }
                     }
-                    echo json_encode(['success' => true]); exit;
+                    if ($count == 0) throw new Exception("No templates found to sync for the linked infrastructure.");
+                    echo json_encode(['success' => true, 'count' => $count]); exit;
                 case 'updateSecurity':
                     $setting = $_POST['setting'];
                     $value = $_POST['value'];
