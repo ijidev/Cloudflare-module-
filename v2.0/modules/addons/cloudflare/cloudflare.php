@@ -1095,20 +1095,52 @@ function cloudflare_clientarea($vars) {
                     $api->pauseZone($zoneId, $pause);
                     echo json_encode(['success' => true]); exit;
                 case 'syncDNS':
+                    // 1. Identify the Cluster/Infrastructure
+                    $infraId = null;
+                    
+                    // A. Check for direct product mapping first
                     $services = Capsule::table('tblhosting')->where('userid', $clientId)->where('domainstatus', 'Active')->get();
-                    $infraIds = Capsule::table('mod_cloudflare_product_infra')->whereIn('product_id', $services->pluck('packageid'))->pluck('infra_id')->unique()->toArray();
-                                        $count = 0;
-                    foreach ($infraIds as $infraId) {
-                        $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
-                        $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
-                        foreach ($templates as $t) {
-                            try { 
-                                $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied); 
-                                $count++;
-                            } catch (\Exception $e) {}
+                    foreach ($services as $s) {
+                        if ($s->domain === $domain) {
+                            $infraId = Capsule::table('mod_cloudflare_product_infra')->where('product_id', $s->packageid)->value('infra_id');
+                            break;
                         }
                     }
-                    if ($count == 0) throw new Exception("No templates found to sync for the linked infrastructure.");
+
+                    // B. If no direct product match, fallback to IP-based detection (from Cloudflare A-record)
+                    if (!$infraId) {
+                        try {
+                            $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
+                            $zoneId = $api->getZoneId($domain);
+                            if ($zoneId) {
+                                $dnsRecords = $api->getDNSRecords($zoneId);
+                                foreach ($dnsRecords['result'] as $r) {
+                                    if ($r['type'] === 'A' && ($r['name'] === $domain || $r['name'] === 'www.'.$domain)) {
+                                        $infraId = Capsule::table('mod_cloudflare_infrastructure')->where('ip', $r['content'])->value('id');
+                                        break;
+                                    }
+                                }
+                            }
+                        } catch (\Exception $e) { }
+                    }
+
+                    if (!$infraId) {
+                        throw new Exception("Could not determine linked infrastructure. Ensure the domain is linked to a product OR pointing to a cluster IP.");
+                    }
+
+                    // 2. Fetch and apply templates
+                    $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
+                    $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
+                    $count = 0;
+                    
+                    foreach ($templates as $t) {
+                        try { 
+                            $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied); 
+                            $count++;
+                        } catch (\Exception $e) {}
+                    }
+                    
+                    if ($count == 0) throw new Exception("No templates found to sync for Cluster: " . ($infra->name ?? 'Unknown'));
                     echo json_encode(['success' => true, 'count' => $count]); exit;
                 case 'updateSecurity':
                     $setting = $_POST['setting'];
