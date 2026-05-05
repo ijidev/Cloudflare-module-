@@ -16,7 +16,7 @@
         <div class="cf-eligibility-card">
             <h3>How to unlock?</h3>
             <div class="cf-eligible-grid">
-                {foreach from=$eligibleProducts|default:[] item=p}
+                {foreach from=$eligibleProducts item=p}
                     <div class="cf-plan-card">
                         <div class="cf-plan-icon"><i class="fa fa-server"></i></div>
                         <h4>{$p->name}</h4>
@@ -41,11 +41,11 @@
             </div>
             <div class="cf-stats-container">
                 <div class="cf-stat-box">
-                    <span class="cf-stat-val">{if !empty($userAccounts)}{$userAccounts|@count}{else}0{/if}</span>
+                    <span class="cf-stat-val">{$userAccounts|@count}</span>
                     <span class="cf-stat-lab">Connected</span>
                 </div>
                 <div class="cf-stat-box">
-                    <span class="cf-stat-val">{if !empty($proxiedDomains)}{$proxiedDomains|@count}{else}0{/if}</span>
+                    <span class="cf-stat-val">{$proxiedDomains|@count}</span>
                     <span class="cf-stat-lab">Active Assets</span>
                 </div>
             </div>
@@ -72,13 +72,13 @@
                         <h3>Infrastructure Accounts</h3>
                         <p>Link your accounts via API to manage security settings.</p>
                     </div>
-                    {if !empty($userAccounts) && $userAccounts|@count > 0}
+                    {if $userAccounts|@count > 0}
                     <button class="cf-btn-primary" onclick="showAddAccount()"><i class="fa fa-plus"></i> Add Account</button>
                     {/if}
                 </div>
                 
                 <div class="cf-account-grid">
-                    {foreach from=$userAccounts|default:[] item=acc}
+                    {foreach from=$userAccounts item=acc}
                     <div class="cf-account-card">
                         <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                             <div>
@@ -191,7 +191,7 @@
                 <table class="cf-dashboard-table">
                     <thead><tr><th>Domain Name</th><th>Account</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
                     <tbody>
-                        {foreach from=$proxiedDomains|default:[] item=p}
+                        {foreach from=$proxiedDomains item=p}
                             <tr>
                                 <td><strong>{$p.name}</strong></td>
                                 <td><span class="cf-tag-account">{$p.account_name}</span></td>
@@ -213,9 +213,9 @@
                 <table class="cf-dashboard-table">
                     <thead><tr><th>Domain Name</th><th>Status</th><th style="text-align:right;">Infrastructure Status</th></tr></thead>
                     <tbody>
-                        {foreach from=$domains|default:[] item=d}
+                        {foreach from=$domains item=d}
                             {assign var="isProxied" value=false}
-                            {foreach from=$proxiedDomains|default:[] item=p}{if $p.name == $d->domain}{assign var="isProxied" value=true}{/if}{/foreach}
+                            {foreach from=$proxiedDomains item=p}{if $p.name == $d->domain}{assign var="isProxied" value=true}{/if}{/foreach}
                             <tr>
                                 <td><strong>{$d->domain}</strong></td>
                                 <td><span class="label label-default">{$d->status}</span></td>
@@ -264,40 +264,6 @@
             <div style="display:flex; justify-content:flex-end; gap:10px;">
                 <button type="button" onclick="$('#editAccountModal').fadeOut()" style="padding:10px 15px; border:1px solid #e2e8f0; background:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Cancel</button>
                 <button type="submit" class="cf-btn-primary">Save Changes</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-
-<!-- Sync Domain Modal -->
-<div id="syncModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.5); z-index:9999; backdrop-filter:blur(4px); align-items:center; justify-content:center;">
-    <div style="background:#fff; border-radius:16px; padding:24px; width:90%; max-width:450px; box-shadow:0 10px 25px rgba(0,0,0,0.1); margin:auto;">
-        <h3 style="margin:0 0 15px; font-weight:700;">Initialize Infrastructure Sync</h3>
-        <p style="font-size:13px; color:#64748b; margin-bottom:20px;">Connect this domain to your Cloudflare account and apply infrastructure DNS templates.</p>
-        <form onsubmit="handleSyncSubmit(event)">
-            <input type="hidden" id="sync-domain-field">
-            <div class="cf-form-group" style="margin-bottom:15px;">
-                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Target Cloudflare Account</label>
-                <select name="acc" class="cf-input" required>
-                    {foreach from=$userAccounts item=acc}
-                        <option value="{$acc->id}">{$acc->name}</option>
-                    {/foreach}
-                </select>
-            </div>
-            <div class="cf-form-group" style="margin-bottom:20px;">
-                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Link to Hosting Service</label>
-                <select name="service_id" class="cf-input" required>
-                    <option value="">-- Select Active Service --</option>
-                    {foreach from=$validServices item=s}
-                        <option value="{$s.id}">{$s.domain} ({$s.product_name})</option>
-                    {/foreach}
-                </select>
-                <p style="font-size:11px; color:#94a3b8; margin-top:5px;"><i class="fa fa-info-circle"></i> This determines which infrastructure cluster to use.</p>
-            </div>
-            <div style="display:flex; justify-content:flex-end; gap:10px;">
-                <button type="button" onclick="$('#syncModal').fadeOut()" style="padding:10px 15px; border:1px solid #e2e8f0; background:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Cancel</button>
-                <button type="submit" class="cf-btn-primary">Initialize Sync</button>
             </div>
         </form>
     </div>
