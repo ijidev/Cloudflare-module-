@@ -49,6 +49,7 @@
                                 <th>Type</th>
                                 <th>Name</th>
                                 <th>Content</th>
+                                <th>TTL</th>
                                 <th>Proxy</th>
                                 <th style="text-align:right;">Actions</th>
                             </tr>
@@ -59,6 +60,7 @@
                                     <td><span class="cf-status-tag" style="background:#f1f5f9; color:#475569;">{$record.type}</span></td>
                                     <td><strong>{$record.name}</strong></td>
                                     <td style="max-width:200px; word-break:break-all; color:#64748b;">{$record.content}</td>
+                                    <td>{if $record.ttl == 1}Auto{else}{$record.ttl}{/if}</td>
                                     <td>
                                         {if $record.proxied}
                                             <i class="fa fa-cloud" style="color:var(--cf-orange);" title="Proxied"></i>
@@ -77,24 +79,48 @@
                         </tbody>
                     </table>
                 </div>
+
+                <!-- Security & SSL -->
+                <div class="cf-card-premium" style="margin-top: 20px;">
+                    <div class="cf-card-header">
+                        <h3><i class="fa fa-lock"></i> Edge Security</h3>
+                        <p>Configure SSL/TLS and firewall protection.</p>
+                    </div>
+                    <div class="cf-card-body">
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 0;">
+                            <span>Always Use HTTPS</span>
+                            <div class="cf-switch"><input type="checkbox" {if $settings.always_use_https == 'on'}checked{/if} onchange="updateSecurity('always_use_https', this.checked)"><span class="cf-slider"></span></div>
+                        </div>
+                        <hr style="border:0; border-top:1px solid #f1f5f9; margin:10px 0;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 0;">
+                            <span>Automatic HTTPS Rewrites</span>
+                            <div class="cf-switch"><input type="checkbox" {if $settings.automatic_https_rewrites == 'on'}checked{/if} onchange="updateSecurity('automatic_https_rewrites', this.checked)"><span class="cf-slider"></span></div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Security & SSL -->
+            <!-- History / Logs -->
             <div class="cf-card-premium" style="margin-top: 20px;">
                 <div class="cf-card-header">
-                    <h3><i class="fa fa-lock"></i> Edge Security</h3>
-                    <p>Configure SSL/TLS and firewall protection.</p>
+                    <h3><i class="fa fa-history"></i> Activity History</h3>
+                    <p>Recent changes made to this domain.</p>
                 </div>
-                <div class="cf-card-body">
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 0;">
-                        <span>Always Use HTTPS</span>
-                        <div class="cf-switch"><input type="checkbox" {if $settings.always_use_https == 'on'}checked{/if} onchange="updateSecurity('always_use_https', this.checked)"><span class="cf-slider"></span></div>
-                    </div>
-                    <hr style="border:0; border-top:1px solid #f1f5f9; margin:10px 0;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 0;">
-                        <span>Automatic HTTPS Rewrites</span>
-                        <div class="cf-switch"><input type="checkbox" {if $settings.automatic_https_rewrites == 'on'}checked{/if} onchange="updateSecurity('automatic_https_rewrites', this.checked)"><span class="cf-slider"></span></div>
-                    </div>
+                <div class="cf-card-body" style="padding:0;">
+                    <table class="cf-table" style="font-size:12px;">
+                        <thead><tr><th>Date</th><th>Action</th><th>Details</th></tr></thead>
+                        <tbody>
+                            {foreach from=$clientLogs item=log}
+                                <tr>
+                                    <td><small>{$log->created_at|date_format:"%b %e, %H:%M"}</small></td>
+                                    <td><span class="cf-status-tag" style="background:#e0f2fe; color:#0369a1;">{$log->action}</span></td>
+                                    <td><small>{$log->details}</small></td>
+                                </tr>
+                            {foreachelse}
+                                <tr><td colspan="3" style="text-align:center; padding:15px; color:#94a3b8;">No activity logged for this domain.</td></tr>
+                            {/foreach}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>

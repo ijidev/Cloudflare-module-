@@ -94,19 +94,42 @@ function cloudflare_activate() {
             });
         }
 
-        // Module Settings
-        if (!Capsule::schema()->hasTable('mod_cloudflare_settings')) {
-            Capsule::schema()->create('mod_cloudflare_settings', function ($table) {
-                $table->string('setting', 64)->primary();
-                $table->text('value');
+        // Infrastructure IP History
+        if (!Capsule::schema()->hasTable('mod_cloudflare_infrastructure_ips')) {
+            Capsule::schema()->create('mod_cloudflare_infrastructure_ips', function ($table) {
+                $table->increments('id');
+                $table->integer('infra_id');
+                $table->string('ip', 64);
+                $table->timestamp('created_at')->useCurrent();
             });
-            // Default settings
-            Capsule::table('mod_cloudflare_settings')->insert([
-                ['setting' => 'fetch_all_domains', 'value' => 'off']
-            ]);
         }
 
-        return ['status' => 'success', 'description' => 'Activated successfully.'];
+        // Module Logs
+        if (!Capsule::schema()->hasTable('mod_cloudflare_logs')) {
+            Capsule::schema()->create('mod_cloudflare_logs', function ($table) {
+                $table->increments('id');
+                $table->integer('client_id')->default(0);
+                $table->string('domain', 255)->nullable();
+                $table->string('action', 64);
+                $table->text('details')->nullable();
+                $table->timestamp('created_at')->useCurrent();
+            });
+        }
+
+        // Default settings
+        $defaults = [
+            'fetch_all_domains' => 'off',
+            'sync_without_product' => 'off',
+            'verify_addon_domains' => 'on',
+            'ip_retention_count' => '3'
+        ];
+        foreach ($defaults as $k => $v) {
+            if (!Capsule::table('mod_cloudflare_settings')->where('setting', $k)->exists()) {
+                Capsule::table('mod_cloudflare_settings')->insert(['setting' => $k, 'value' => $v]);
+            }
+        }
+
+        return ['status' => 'success', 'description' => 'Activated successfully with IP History and Logs.'];
     } catch (\Exception $e) {
         return ['status' => 'error', 'description' => $e->getMessage()];
     }
@@ -165,12 +188,26 @@ function cloudflare_output($vars) {
     $action = $_REQUEST['action'] ?? 'infra';
     $modulelink = $vars['modulelink'];
 
-    // Helper for self-healing (Advanced Scan & Auto-Link)
-    $repairInfra = function($infraId) {
+    // Helper for logging
+    $logAction = function($clientId, $domain, $action, $details) {
+        Capsule::table('mod_cloudflare_logs')->insert([
+            'client_id' => $clientId,
+            'domain' => $domain,
+            'action' => $action,
+            'details' => is_array($details) ? json_encode($details) : $details,
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+    };
+
+    // Helper for self-healing (Advanced Scan & IP Migration)
+    $repairInfra = function($infraId) use ($logAction) {
         $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
         if (!$infra) return 0;
         
-        // Scan ALL active hosting services in WHMCS
+        $historicalIps = Capsule::table('mod_cloudflare_infrastructure_ips')->where('infra_id', $infraId)->pluck('ip')->toArray();
+        $allTargetIps = array_unique(array_merge([$infra->ip], $historicalIps));
+        $syncWithoutProduct = Capsule::table('mod_cloudflare_settings')->where('setting', 'sync_without_product')->value('value') == 'on';
+
         $hosting = Capsule::table('tblhosting')->where('domainstatus', 'Active')->get();
         $repaired = 0;
         require_once __DIR__ . '/lib/API.php';
@@ -179,9 +216,9 @@ function cloudflare_output($vars) {
             $domain = trim($s->domain);
             if (!$domain) continue;
             
-            // Safety: Check if this product is already linked to ANOTHER cluster
             $existingLink = Capsule::table('mod_cloudflare_product_infra')->where('product_id', $s->packageid)->first();
             if ($existingLink && $existingLink->infra_id != $infraId) continue;
+            if (!$existingLink && !$syncWithoutProduct) continue;
 
             $acc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $s->userid)->first();
             if (!$acc) continue;
@@ -191,36 +228,53 @@ function cloudflare_output($vars) {
                 $zoneId = $api->getZoneId($domain);
                 
                 $publicIp = gethostbyname($domain);
-                $isPointing = ($publicIp === $infra->ip);
+                $isMatch = in_array($publicIp, $allTargetIps);
                 
-                // If public DNS doesn't match, check if it's already in CF pointing to us (proxied)
-                if (!$isPointing && $zoneId) {
+                if (!$isMatch && $zoneId) {
                     $dnsResp = $api->getDNSRecords($zoneId);
                     foreach (($dnsResp['result'] ?? []) as $r) {
-                        if ($r['type'] == 'A' && ($r['name'] == $domain || $r['name'] == 'www.'.$domain) && $r['content'] == $infra->ip) {
-                            $isPointing = true; break;
+                        if ($r['type'] == 'A' && in_array($r['content'], $allTargetIps)) {
+                            $isMatch = true; break;
                         }
                     }
                 }
 
-                if (!$isPointing) continue;
+                if (!$isMatch) continue;
 
-                // WE HAVE A MATCH! 
-                // 1. Auto-Link Product to Cluster if not already linked
                 if (!$existingLink) {
                     Capsule::table('mod_cloudflare_product_infra')->insert(['product_id' => $s->packageid, 'infra_id' => $infraId]);
                 }
 
-                // 2. Auto-Sync to Cloudflare
                 if (!$zoneId) {
                     $resp = $api->createZone($domain, $acc->account_id);
                     $zoneId = $resp['result']['id'] ?? null;
+                    $logAction($s->userid, $domain, 'AUTO_CREATE_ZONE', "Zone initialized for infrastructure $infraId");
                 }
                 
                 if ($zoneId) {
                     $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
                     foreach ($templates as $t) {
-                        try { $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied); } catch (\Exception $e) {}
+                        try { 
+                            $name = str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name);
+                            $content = str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content);
+                            
+                            // Check if record exists and update if it points to an old IP
+                            $existingRecords = $api->getDNSRecords($zoneId);
+                            $found = false;
+                            foreach ($existingRecords['result'] as $er) {
+                                if ($er['type'] == $t->type && $er['name'] == $name) {
+                                    if (in_array($er['content'], $historicalIps) && $er['content'] != $infra->ip) {
+                                        $api->updateDNSRecord($zoneId, $er['id'], $t->type, $name, $content, $t->ttl, $t->proxied);
+                                        $logAction($s->userid, $domain, 'IP_MIGRATION', "Updated $name from {$er['content']} to {$infra->ip}");
+                                    }
+                                    $found = true; break;
+                                }
+                            }
+                            if (!$found) {
+                                $api->addDNSRecord($zoneId, $t->type, $name, $content, $t->ttl, $t->proxied);
+                                $logAction($s->userid, $domain, 'SYNC_DNS', "Added record $name ($content)");
+                            }
+                        } catch (\Exception $e) {}
                     }
                     $repaired++;
                 }
@@ -229,17 +283,50 @@ function cloudflare_output($vars) {
         return $repaired;
     };
 
+    // Helper for WHM Addon Verification
+    $verifyAddonDomain = function($serviceId, $domain) {
+        $service = Capsule::table('tblhosting')->where('id', $serviceId)->first();
+        if (!$service) return false;
+        $server = Capsule::table('tblservers')->where('id', $service->server)->first();
+        if (!$server) return false;
+
+        $user = $server->username;
+        $pass = decrypt($server->password);
+        $host = $server->ipaddress ?: $server->hostname;
+        $port = 2087;
+
+        $url = "https://$host:$port/json-api/listaddondomains?api.version=1&user=" . urlencode($service->username);
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: WHM $user:" . str_replace("\r\n", "", $pass)]);
+        $res = curl_exec($ch);
+        curl_close($ch);
+
+        $data = json_decode($res, true);
+        if (isset($data['data']['addon'])) {
+            foreach ($data['data']['addon'] as $addon) {
+                if ($addon['domain'] == $domain) return true;
+            }
+        }
+        return false;
+    };
+
     // AJAX Operations (Admin)
     if (isset($_POST['ajax']) && $_POST['ajax'] == '1') {
         header('Content-Type: application/json');
         try {
             switch ($_POST['op']) {
                 case 'add_template':
+                    if (empty($_POST['name']) || empty($_POST['content'])) throw new Exception("Name and Content are required.");
                     $id = Capsule::table('mod_cloudflare_templates')->insertGetId([
                         'infra_id' => (int)$_POST['infra_id'],
                         'type' => $_POST['type'],
                         'name' => $_POST['name'],
                         'content' => $_POST['content'],
+                        'ttl' => (int)$_POST['ttl'],
                         'proxied' => $_POST['proxied'] == 'true' ? 1 : 0,
                     ]);
                     echo json_encode(['success' => true, 'id' => $id]); exit;
@@ -249,6 +336,7 @@ function cloudflare_output($vars) {
                     echo json_encode(['success' => true]); exit;
 
                 case 'update_template':
+                    if (empty($_POST['name']) || empty($_POST['content'])) throw new Exception("Name and Content are required.");
                     Capsule::table('mod_cloudflare_templates')->where('id', (int)$_POST['id'])->update([
                         'type' => $_POST['type'],
                         'name' => $_POST['name'],
@@ -294,15 +382,32 @@ function cloudflare_output($vars) {
     }
 
     if ($_POST) {
-        if ($action == 'add_infra') {
+        if ($action == 'add_infra' || $action == 'update_infra') {
+            $id = (int)$_POST['id'];
             $name = $_POST['name'];
             $ip = $_POST['ip'];
             if ($_POST['server_id']) {
                 $server = Capsule::table('tblservers')->where('id', $_POST['server_id'])->first();
                 if ($server) { $name = $server->name; $ip = $server->ipaddress; }
             }
-            Capsule::table('mod_cloudflare_infrastructure')->insert(['server_id' => (int)$_POST['server_id'], 'name' => $name, 'ip' => $ip, 'description' => $_POST['description']]);
-            header("Location: $modulelink&action=infra&success=infra_added"); exit;
+            
+            if ($action == 'update_infra') {
+                $old = Capsule::table('mod_cloudflare_infrastructure')->where('id', $id)->first();
+                if ($old && $old->ip != $ip) {
+                    Capsule::table('mod_cloudflare_infrastructure_ips')->insert(['infra_id' => $id, 'ip' => $old->ip]);
+                    // Limit retention
+                    $limit = (int)Capsule::table('mod_cloudflare_settings')->where('setting', 'ip_retention_count')->value('value') ?: 3;
+                    $history = Capsule::table('mod_cloudflare_infrastructure_ips')->where('infra_id', $id)->orderBy('id', 'desc')->get();
+                    if ($history->count() > $limit) {
+                        Capsule::table('mod_cloudflare_infrastructure_ips')->where('id', '<=', $history->last()->id)->where('infra_id', $id)->delete();
+                    }
+                }
+                Capsule::table('mod_cloudflare_infrastructure')->where('id', $id)->update(['server_id' => (int)$_POST['server_id'], 'name' => $name, 'ip' => $ip, 'description' => $_POST['description']]);
+                header("Location: $modulelink&action=manage_infra&id=$id&success=infra_updated"); exit;
+            } else {
+                Capsule::table('mod_cloudflare_infrastructure')->insert(['server_id' => (int)$_POST['server_id'], 'name' => $name, 'ip' => $ip, 'description' => $_POST['description']]);
+                header("Location: $modulelink&action=infra&success=infra_added"); exit;
+            }
         }
 
         if ($action == 'mass_sync_infra') {
@@ -403,6 +508,7 @@ function cloudflare_output($vars) {
     <div class="cf-tabs">
         <a href="<?=$modulelink?>&action=infra" class="<?=($action=='infra' || $action=='manage_infra')?'active':''?>">Infrastructure Overview</a>
         <a href="<?=$modulelink?>&action=sync" class="<?=$action=='sync'?'active':''?>">Sync Domain Assets</a>
+        <a href="<?=$modulelink?>&action=logs" class="<?=$action=='logs'?'active':''?>">System Logs</a>
         <a href="<?=$modulelink?>&action=settings" class="<?=$action=='settings'?'active':''?>">General Settings</a>
     </div>
 
@@ -489,8 +595,21 @@ function cloudflare_output($vars) {
             <a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=templates" class="<?=$subtab=='templates'?'active':''?>">DNS Templates</a>
             <a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=products" class="<?=$subtab=='products'?'active':''?>">Linked Products</a>
             <a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=assets" class="<?=$subtab=='assets'?'active':''?>">Linked Assets</a>
+            <a href="<?=$modulelink?>&action=manage_infra&id=<?=$id?>&tab=settings" class="<?=$subtab=='settings'?'active':''?>">Cluster Settings</a>
         </div>
-        <?php if ($subtab == 'templates'): ?>
+        
+        <?php if ($subtab == 'settings'): ?>
+            <form method="post" action="<?=$modulelink?>&action=update_infra">
+                <input type="hidden" name="id" value="<?=$id?>">
+                <div class="row">
+                    <div class="col-md-4"><label>WHMCS Server</label><select name="server_id" class="form-control"><option value="">-- Manual --</option><?php foreach($whmcsServers as $s): ?><option value="<?=$s->id?>" <?=($infra->server_id==$s->id?'selected':'')?>><?=$s->name?> (<?=$s->ipaddress?>)</option><?php endforeach; ?></select></div>
+                    <div class="col-md-4"><label>Cluster Name</label><input type="text" name="name" value="<?=$infra->name?>" class="form-control"></div>
+                    <div class="col-md-4"><label>Cluster IP</label><input type="text" name="ip" value="<?=$infra->ip?>" class="form-control"></div>
+                </div>
+                <div class="form-group" style="margin-top:15px;"><label>Description</label><textarea name="description" class="form-control"><?=$infra->description?></textarea></div>
+                <button type="submit" class="btn btn-primary">Update Cluster Configuration</button>
+            </form>
+        <?php elseif ($subtab == 'templates'): ?>
             <div class="alert alert-info">
                 <i class="fa fa-info-circle"></i> Use <code>{domain}</code> for the client domain and <code>{ip}</code> for the cluster IP (<?=$infra->ip?>).
             </div>
@@ -709,29 +828,82 @@ function cloudflare_output($vars) {
     $userAccounts = Capsule::table('mod_cloudflare_user_accounts')->get();
     echo '<div class="cf-admin-card"><h4>Infrastructure Sync Hub</h4><p class="text-muted">Monitor global sync status across all client accounts.</p></div>';
 ?>
-<?php elseif ($action == 'settings'): 
-    $settings = Capsule::table('mod_cloudflare_settings')->pluck('value', 'setting')->toArray();
-?>
-    <div class="cf-admin-card">
-        <div class="cf-admin-header"><h4>Module Configuration</h4></div>
-        <form method="post" action="<?=$modulelink?>&action=save_settings">
-            <div class="form-group">
-                <label>Fetch All Cloudflare Domains</label><br>
-                <input type="radio" name="settings[fetch_all_domains]" value="on" <?=($settings['fetch_all_domains']=='on'?'checked':'')?>> Enabled
-                <input type="radio" name="settings[fetch_all_domains]" value="off" <?=($settings['fetch_all_domains']=='off'?'checked':'')?>> Disabled
-                <p class="help-block">If enabled, the system will fetch all domains from connected Cloudflare accounts, not just those in WHMCS.</p>
-            </div>
-            <hr>
-            <button type="submit" class="btn btn-primary">Save Module Settings</button>
-        </form>
-    </div>
-<?php endif; ?>
+    <?php elseif ($action == 'logs'): 
+        $logs = Capsule::table('mod_cloudflare_logs')->orderBy('id', 'desc')->limit(100)->get();
+    ?>
+        <div class="cf-admin-card">
+            <h4>System Activity Logs</h4>
+            <table class="cf-table-admin">
+                <thead><tr><th>Date</th><th>Client</th><th>Domain</th><th>Action</th><th>Details</th></tr></thead>
+                <tbody>
+                    <?php foreach ($logs as $l): ?>
+                        <tr>
+                            <td><small><?=date('M j, H:i', strtotime($l->created_at))?></small></td>
+                            <td>#<?=$l->client_id?></td>
+                            <td><?=$l->domain?></td>
+                            <td><span class="label label-info"><?=$l->action?></span></td>
+                            <td><small><?=$l->details?></small></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+
+    <?php elseif ($action == 'settings'): 
+        $settings = Capsule::table('mod_cloudflare_settings')->pluck('value', 'setting')->toArray();
+    ?>
+        <div class="cf-admin-card">
+            <div class="cf-admin-header"><h4>Module Configuration</h4></div>
+            <form method="post" action="<?=$modulelink?>&action=save_settings">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label>Fetch All Cloudflare Domains</label><br>
+                            <input type="radio" name="settings[fetch_all_domains]" value="on" <?=($settings['fetch_all_domains']=='on'?'checked':'')?>> Enabled
+                            <input type="radio" name="settings[fetch_all_domains]" value="off" <?=($settings['fetch_all_domains']=='off'?'checked':'')?>> Disabled
+                            <p class="help-block">Fetch domains even if not in WHMCS.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label>Sync Without Product Mapping</label><br>
+                            <input type="radio" name="settings[sync_without_product]" value="on" <?=($settings['sync_without_product']=='on'?'checked':'')?>> Enabled
+                            <input type="radio" name="settings[sync_without_product]" value="off" <?=($settings['sync_without_product']=='off'?'checked':'')?>> Disabled
+                            <p class="help-block">Sync domains solely based on IP match.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label>Verify Addon Domains (WHM)</label><br>
+                            <input type="radio" name="settings[verify_addon_domains]" value="on" <?=($settings['verify_addon_domains']=='on'?'checked':'')?>> Enabled
+                            <input type="radio" name="settings[verify_addon_domains]" value="off" <?=($settings['verify_addon_domains']=='off'?'checked':'')?>> Disabled
+                            <p class="help-block">Confirm addon domain exists in WHM before mapping.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-group">
+                            <label>IP Retention History Count</label>
+                            <input type="number" name="settings[ip_retention_count]" value="<?=$settings['ip_retention_count']?>" class="form-control">
+                            <p class="help-block">How many old IPs to track for migration.</p>
+                        </div>
+                    </div>
+                </div>
+                <hr>
+                <button type="submit" class="btn btn-primary">Save Module Settings</button>
+            </form>
+        </div>
+    <?php endif; ?>
     <?php
 }
 
 function cloudflare_clientarea($vars) {
     $clientId = (int)$vars['userid'];
-    if (!$clientId) return "Access Denied";
+    if (!$clientId) return [
+        'templatefile' => 'templates/client/overview',
+        'vars' => ['error' => 'You must be logged in to access this page.']
+    ];
 
     // 1. Access Control Check
     $allowedProducts = Capsule::table('mod_cloudflare_product_infra')->pluck('infra_id', 'product_id')->toArray();
@@ -897,6 +1069,25 @@ function cloudflare_clientarea($vars) {
                     $value = $_POST['value'];
                     $api->updateZoneSetting($zoneId, $setting, $value);
                     echo json_encode(['success' => true]); exit;
+
+                case 'mapDomain':
+                    $serviceId = (int)$_POST['service_id'];
+                    $isAddon = $_POST['type'] == 'addon';
+                    $verify = Capsule::table('mod_cloudflare_settings')->where('setting', 'verify_addon_domains')->value('value') == 'on';
+                    
+                    if ($verify && $isAddon) {
+                        if (!$verifyAddonDomain($serviceId, $domain)) {
+                            throw new Exception("Verification failed: This domain is not found as an addon domain on the selected hosting account.");
+                        }
+                    }
+                    
+                    $infraId = Capsule::table('mod_cloudflare_product_infra')->where('product_id', Capsule::table('tblhosting')->where('id', $serviceId)->value('packageid'))->value('infra_id');
+                    if (!$infraId) throw new Exception("The selected product is not linked to any Cloudflare infrastructure cluster.");
+                    
+                    // We don't have a specific table for per-domain mapping yet, we use the product-infra link.
+                    // But to "remember" this domain's product, we'll store it in logs and ensure the sync logic can find it.
+                    $logAction($clientId, $domain, 'DOMAIN_MAPPING', "Mapped to Service #$serviceId (Type: {$_POST['type']})");
+                    echo json_encode(['success' => true]); exit;
             }
         } catch (\Exception $e) {
             echo json_encode(['success' => false, 'message' => $e->getMessage()]); exit;
@@ -914,7 +1105,13 @@ function cloudflare_clientarea($vars) {
             header("Location: index.php?m=cloudflare&error=invalid_account"); exit;
         }
 
-        // Trigger sync if requested (create zone if missing and apply templates)
+        $syncWithoutProduct = Capsule::table('mod_cloudflare_settings')->where('setting', 'sync_without_product')->value('value') == 'on';
+        $isMapped = Capsule::table('tblhosting')->where('userid', $clientId)->where('domain', $domain)->exists();
+        if (!$isMapped) {
+            $isMapped = Capsule::table('mod_cloudflare_logs')->where('client_id', $clientId)->where('domain', $domain)->where('action', 'DOMAIN_MAPPING')->exists();
+        }
+
+        $mappingRequired = (!$isMapped && !$syncWithoutProduct);
         if (isset($_GET['trigger_sync']) && $_GET['trigger_sync'] == '1') {
             try {
                 $api = new \WHMCS\Module\Addon\Cloudflare\API($account->api_token, $account->email);
@@ -973,7 +1170,10 @@ function cloudflare_clientarea($vars) {
                 'companyname' => $GLOBALS['companyname'],
                 'dnsRecords' => $dnsRecords,
                 'settings' => $cfSettings,
-                'dnsError' => $dnsError
+                'dnsError' => $dnsError,
+                'mappingRequired' => $mappingRequired,
+                'clientLogs' => Capsule::table('mod_cloudflare_logs')->where('client_id', $clientId)->where('domain', $domain)->orderBy('id', 'desc')->get(),
+                'activeServices' => $activeServices
             ]
         ];
     }
