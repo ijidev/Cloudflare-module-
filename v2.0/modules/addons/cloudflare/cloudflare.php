@@ -918,7 +918,14 @@ function cloudflare_clientarea($vars) {
     $clientId = (int)$vars['userid'];
     if (!$clientId) return [
         'templatefile' => 'templates/client/overview',
-        'vars' => ['error' => 'You must be logged in to access this page.']
+                'vars' => [
+            'error' => 'You must be logged in to access this page.',
+            'restricted' => false,
+            'userAccounts' => [],
+            'proxiedDomains' => [],
+            'domains' => [],
+            'validServices' => []
+        ]
     ];
 
     // 1. Access Control Check
@@ -939,9 +946,13 @@ function cloudflare_clientarea($vars) {
         $eligibleProducts = Capsule::table('tblproducts')->whereIn('id', $eligibleProductIds)->where('retired', 0)->get();
         return [
             'templatefile' => 'templates/client/overview',
-            'vars' => [
+                        'vars' => [
                 'restricted' => true,
-                'eligibleProducts' => $eligibleProducts
+                'eligibleProducts' => $eligibleProducts,
+                'userAccounts' => [],
+                'proxiedDomains' => [],
+                'domains' => [],
+                'validServices' => []
             ]
         ];
     }
@@ -1217,8 +1228,9 @@ function cloudflare_clientarea($vars) {
             'userAccounts' => $userAccounts ?: [],
             'proxiedDomains' => $proxiedDomains ?: [],
             'domains' => $whmcsDomains ? $whmcsDomains->toArray() : [],
-            'validServices' => $validServices ?: [],
-            'companyname' => $GLOBALS['companyname']
+                        'validServices' => $validServices ?: [],
+            'companyname' => $GLOBALS['companyname'],
+            'clientId' => $clientId
         ]
     ];
 }
