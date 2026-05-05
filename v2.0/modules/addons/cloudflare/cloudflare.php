@@ -915,7 +915,11 @@ function cloudflare_output($vars) {
 }
 
 function cloudflare_clientarea($vars) {
-    $clientId = (int)$vars['userid'];
+    $ca = new \WHMCS\ClientArea();
+    $clientId = (int)$ca->getUserID();
+    if (!$clientId && isset($vars['userid'])) {
+        $clientId = (int)$vars['userid'];
+    }
     if (!$clientId) return [
         'templatefile' => 'templates/client/overview',
                 'vars' => [
