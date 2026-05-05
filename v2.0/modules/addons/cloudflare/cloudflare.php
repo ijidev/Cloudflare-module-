@@ -1138,7 +1138,7 @@ function cloudflare_clientarea($vars) {
                                 $finalName = str_replace(['{domain}', '{ip}'], [$cleanDomain, $infra->ip], $t->name);
                                 $finalContent = str_replace(['{domain}', '{ip}'], [$cleanDomain, $infra->ip], $t->content);
                                 
-                                $api->addDNSRecord($zoneId, $t->type, $finalName, $finalContent, $t->ttl, $t->proxied); 
+                                $api->addDNSRecord($zoneId, $t->type, $finalName, $finalContent, (int)$t->ttl, (bool)$t->proxied); 
                                 $count++;
                             } catch (\Exception $e) {
                                 // If error is "record already exists", we still consider it a "sync attempt"
