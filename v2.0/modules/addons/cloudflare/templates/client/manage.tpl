@@ -251,20 +251,24 @@ function handleRecordSubmit(e) {
     const id = $('#field-id').val();
     btn.prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Saving...');
     
-    const formData = new FormData(e.target);
-    const data = new URLSearchParams(formData);
-    data.append('ajax', '1');
-    data.append('op', id ? 'editRecord' : 'addRecord');
-    data.append('domain', '{$domainName}');
-    data.append('acc_id', '{$account->id}');
-    
-    fetch('index.php?m=cloudflare', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: data
-    }).then(r => r.json()).then(res => {
+    const data = {
+        ajax: '1',
+        op: id ? 'editRecord' : 'addRecord',
+        record_id: id,
+        type: $('#field-type').val(),
+        name: $('#field-name').val(),
+        content: $('#field-content').val(),
+        proxied: $('#field-proxied').is(':checked'),
+        domain: '{/literal}{$domainName}{literal}',
+        acc_id: '{/literal}{$account->id}{literal}'
+    };
+
+    $.post('index.php?m=cloudflare', data, function(res) {
         if (res.success) window.location.reload();
         else { Swal.fire('Error', res.message, 'error'); btn.prop('disabled', false).html('Save Record'); }
+    }, 'json').fail(() => { 
+        Swal.fire('Error', 'Connection failed.', 'error'); 
+        btn.prop('disabled', false).html('Save Record'); 
     });
 }
 function deleteRecord(id) {
@@ -274,14 +278,16 @@ function deleteRecord(id) {
     }).then((result) => {
         if (result.isConfirmed) {
             Swal.fire({ title: 'Deleting...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-            fetch('index.php?m=cloudflare', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `ajax=1&op=deleteRecord&record_id=${id}&domain={/literal}{$domainName}{literal}&acc_id={/literal}{$account->id}{literal}`
-            }).then(r => r.json()).then(data => {
+            $.post('index.php?m=cloudflare', {
+                ajax: '1',
+                op: 'deleteRecord',
+                record_id: id,
+                domain: '{/literal}{$domainName}{literal}',
+                acc_id: '{/literal}{$account->id}{literal}'
+            }, function(data) {
                 if (data.success) window.location.reload();
                 else Swal.fire('Error', data.message, 'error');
-            });
+            }, 'json').fail(() => { Swal.fire('Error', 'Delete operation failed.', 'error'); });
         }
     });
 }
