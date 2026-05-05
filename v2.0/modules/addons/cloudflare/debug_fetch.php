@@ -104,26 +104,46 @@ if ($clusters->count() > 0) {
 }
 echo "</div>";
 
-// Section: Template Check
+// Section: Live Sync Simulation (koorav.com)
 echo "<div class='card'>";
-echo "<h3>6. Infrastructure Templates Check (ID: 3)</h3>";
-$simInfraId = 3; 
-$templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $simInfraId)->get();
-echo "Templates found for Cluster #$simInfraId: <b class='" . ($templates->count() > 0 ? "success" : "error") . "'>" . $templates->count() . "</b><br>";
+echo "<h3>7. Full Sync Simulation (koorav.com)</h3>";
+$testDomain = "koorav.com";
+echo "Starting simulation for <b>$testDomain</b>...<br>";
 
-if ($templates->count() > 0) {
-    echo "<table><thead><tr><th>Name</th><th>Type</th><th>Content</th></tr></thead><tbody>";
-    foreach ($templates as $t) {
-        echo "<tr><td><code>{$t->name}</code></td><td>{$t->type}</td><td><code>{$t->content}</code></td></tr>";
+try {
+    $targetAcc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $clientId)->first();
+    if (!$targetAcc) throw new Exception("No accounts linked to your client ID.");
+
+    $api = new API($targetAcc->api_token, $targetAcc->email);
+    $zoneId = $api->getZoneId($testDomain);
+    echo "1. Zone ID for $testDomain: <span class='info'>$zoneId</span><br>";
+
+    // IP Detection
+    $infraId = null;
+    $dnsRecords = $api->getDNSRecords($zoneId);
+    foreach ($dnsRecords['result'] as $r) {
+        if ($r['type'] === 'A' && ($r['name'] === $testDomain || $r['name'] === 'www.'.$testDomain)) {
+            $foundIp = $r['content'];
+            $infraId = Capsule::table('mod_cloudflare_infrastructure')->where('ip', $foundIp)->value('id');
+            echo "2. Detected A-Record IP: <code>$foundIp</code> -> Cluster ID: <span class='info'>$infraId</span><br>";
+            break;
+        }
     }
-    echo "</tbody></table>";
-} else {
-    echo "<p class='error'>FAIL: No records exist in mod_cloudflare_templates for infra_id = $simInfraId</p>";
-    echo "<p class='info'>Checking ALL templates in database to find correct infra_id...</p>";
-    $allT = Capsule::table('mod_cloudflare_templates')->get();
-    echo "Total templates in DB: <b>" . $allT->count() . "</b><br>";
-    foreach ($allT as $at) {
-        echo "- Template for Infra ID: <b>{$at->infra_id}</b> (Name: {$at->name})<br>";
+
+    if ($infraId) {
+        $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
+        echo "3. Templates found in DB for ID $infraId: <b class='success'>" . $templates->count() . "</b><br>";
+        
+        foreach ($templates as $t) {
+            $finalName = str_replace(['{domain}', '{ip}'], [$testDomain, $foundIp], $t->name);
+            $finalContent = str_replace(['{domain}', '{ip}'], [$testDomain, $foundIp], $t->content);
+            echo "- WOULD SYNC: <code>$finalName</code> ({$t->type}) -> <code>$finalContent</code><br>";
+        }
+    } else {
+        echo "2. <span class='error'>FAIL: No cluster IP match found for $testDomain</span><br>";
     }
+
+} catch (\Exception $e) {
+    echo "Simulation Failed: <span class='error'>" . $e->getMessage() . "</span>";
 }
 echo "</div>";
