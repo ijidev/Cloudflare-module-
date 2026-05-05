@@ -41,11 +41,11 @@
             </div>
             <div class="cf-stats-container">
                 <div class="cf-stat-box">
-                    <span class="cf-stat-val">{if $userAccounts}{$userAccounts|@count}{else}0{/if}</span>
+                    <span class="cf-stat-val">{if !empty($userAccounts)}{$userAccounts|@count}{else}0{/if}</span>
                     <span class="cf-stat-lab">Connected</span>
                 </div>
                 <div class="cf-stat-box">
-                    <span class="cf-stat-val">{if $proxiedDomains}{$proxiedDomains|@count}{else}0{/if}</span>
+                    <span class="cf-stat-val">{if !empty($proxiedDomains)}{$proxiedDomains|@count}{else}0{/if}</span>
                     <span class="cf-stat-lab">Active Assets</span>
                 </div>
             </div>
@@ -72,7 +72,7 @@
                         <h3>Infrastructure Accounts</h3>
                         <p>Link your accounts via API to manage security settings.</p>
                     </div>
-                    {if $userAccounts && $userAccounts|@count > 0}
+                    {if !empty($userAccounts) && $userAccounts|@count > 0}
                     <button class="cf-btn-primary" onclick="showAddAccount()"><i class="fa fa-plus"></i> Add Account</button>
                     {/if}
                 </div>
@@ -269,7 +269,6 @@
     </div>
 </div>
 
-</div>
 
 <!-- Sync Domain Modal -->
 <div id="syncModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.5); z-index:9999; backdrop-filter:blur(4px); align-items:center; justify-content:center;">
