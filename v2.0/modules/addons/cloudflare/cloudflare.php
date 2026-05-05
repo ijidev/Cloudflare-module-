@@ -1134,17 +1134,26 @@ function cloudflare_clientarea($vars) {
                         
                         foreach ($templates as $t) {
                             try { 
-                                // Clean up domain name for variable replacement
                                 $cleanDomain = trim($domain);
                                 $finalName = str_replace(['{domain}', '{ip}'], [$cleanDomain, $infra->ip], $t->name);
                                 $finalContent = str_replace(['{domain}', '{ip}'], [$cleanDomain, $infra->ip], $t->content);
                                 
                                 $api->addDNSRecord($zoneId, $t->type, $finalName, $finalContent, $t->ttl, $t->proxied); 
                                 $count++;
-                            } catch (\Exception $e) {}
+                            } catch (\Exception $e) {
+                                // If error is "record already exists", we still consider it a "sync attempt"
+                                if (strpos($e->getMessage(), 'already exists') !== false) {
+                                    $count++; 
+                                } else {
+                                    $errors[] = $e->getMessage();
+                                }
+                            }
                         }
                         
-                        if ($count == 0) throw new Exception("No templates found to sync for Cluster: " . ($infra->name ?? 'Unknown'));
+                        if ($count == 0) {
+                            $errDetail = !empty($errors) ? " (Last Error: " . end($errors) . ")" : "";
+                            throw new Exception("No templates could be applied to Cluster: " . ($infra->name ?? 'Unknown') . $errDetail);
+                        }
                         echo json_encode(['success' => true, 'count' => $count]); exit;
 
                     } catch (\Exception $e) {
