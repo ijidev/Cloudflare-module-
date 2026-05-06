@@ -80,6 +80,13 @@ function cloudflare_activate() {
                 $table->integer('infra_id');
             });
         }
+        // Domain-Infrastructure Mapping (For detached domains or overrides)
+        if (!Capsule::schema()->hasTable('mod_cloudflare_domain_infra')) {
+            Capsule::schema()->create('mod_cloudflare_domain_infra', function ($table) {
+                $table->string('domain', 255)->primary();
+                $table->integer('infra_id');
+            });
+        }
 
         // BYOT Accounts
         if (!Capsule::schema()->hasTable('mod_cloudflare_user_accounts')) {
@@ -139,6 +146,16 @@ function cloudflare_deactivate() {
     return ['status' => 'success', 'description' => 'Deactivated.'];
 }
 
+function cloudflare_log($clientId, $domain, $action, $details) {
+    Capsule::table('mod_cloudflare_logs')->insert([
+        'client_id' => $clientId,
+        'domain' => $domain,
+        'action' => $action,
+        'details' => is_array($details) ? json_encode($details) : $details,
+        'created_at' => date('Y-m-d H:i:s')
+    ]);
+}
+
 function cloudflare_output($vars) {
     // Self-healing Database Schema (Aggressive Check)
     try {
@@ -191,6 +208,14 @@ function cloudflare_output($vars) {
                 $table->text('description')->nullable();
             });
         }
+
+        // mod_cloudflare_domain_infra
+        if (!Capsule::schema()->hasTable('mod_cloudflare_domain_infra')) {
+            Capsule::schema()->create('mod_cloudflare_domain_infra', function ($table) {
+                $table->string('domain', 255)->primary();
+                $table->integer('infra_id');
+            });
+        }
     } catch (\Exception $e) {
         // Silently log or display if admin
     }
@@ -198,19 +223,8 @@ function cloudflare_output($vars) {
     $action = $_REQUEST['action'] ?? 'infra';
     $modulelink = $vars['modulelink'];
 
-    // Helper for logging
-    $logAction = function($clientId, $domain, $action, $details) {
-        Capsule::table('mod_cloudflare_logs')->insert([
-            'client_id' => $clientId,
-            'domain' => $domain,
-            'action' => $action,
-            'details' => is_array($details) ? json_encode($details) : $details,
-            'created_at' => date('Y-m-d H:i:s')
-        ]);
-    };
-
     // Helper for self-healing (Advanced Scan & IP Migration)
-    $repairInfra = function($infraId) use ($logAction) {
+    $repairInfra = function($infraId) {
         $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
         if (!$infra) return 0;
         
@@ -252,7 +266,7 @@ function cloudflare_output($vars) {
                 if (!$isMatch) continue;
 
                 if (!$existingLink) {
-                    Capsule::table('mod_cloudflare_product_infra')->insert(['product_id' => $s->packageid, 'infra_id' => $infraId]);
+                    Capsule::table('mod_cloudflare_domain_infra')->updateOrInsert(['domain' => $domain], ['infra_id' => $infraId]);
                 }
 
                 if (!$zoneId) {
@@ -282,13 +296,35 @@ function cloudflare_output($vars) {
                             }
                             if (!$found) {
                                 $api->addDNSRecord($zoneId, $t->type, $name, $content, $t->ttl, $t->proxied);
-                                $logAction($s->userid, $domain, 'SYNC_DNS', "Added record $name ($content)");
+                                cloudflare_log($s->userid, $domain, 'SYNC_DNS', "Added record $name ($content)");
                             }
                         } catch (\Exception $e) {}
                     }
                     $repaired++;
                 }
             } catch (\Exception $e) {}
+        }
+
+        // 2. Scan tbldomains (for detached domains)
+        if ($syncWithoutProduct) {
+            $domains = Capsule::table('tbldomains')->where('status', 'Active')->get();
+            foreach ($domains as $d) {
+                $domain = trim($d->domain);
+                if (!$domain) continue;
+                if (Capsule::table('mod_cloudflare_domain_infra')->where('domain', $domain)->exists()) continue;
+
+                $acc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $d->userid)->first();
+                if (!$acc) continue;
+
+                try {
+                    $publicIp = gethostbyname($domain);
+                    if (in_array($publicIp, $allTargetIps)) {
+                        Capsule::table('mod_cloudflare_domain_infra')->updateOrInsert(['domain' => $domain], ['infra_id' => $infraId]);
+                        $repaired++;
+                        cloudflare_log($d->userid, $domain, 'AUTO_MAP', "Detached domain linked to infrastructure $infraId");
+                    }
+                } catch (\Exception $e) {}
+            }
         }
         return $repaired;
     };
@@ -804,8 +840,17 @@ function cloudflare_output($vars) {
                 ->join('tblclients', 'tblhosting.userid', '=', 'tblclients.id')
                 ->whereIn('tblhosting.packageid', $linkedProducts)
                 ->where('tblhosting.domainstatus', 'Active')
-                ->select('tblhosting.id', 'tblhosting.domain', 'tblproducts.name as product_name', 'tblclients.firstname', 'tblclients.lastname', 'tblhosting.userid')
-                ->get();
+                ->select('tblhosting.id', 'tblhosting.domain', 'tblproducts.name as product_name', 'tblclients.firstname', 'tblclients.lastname', 'tblhosting.userid', Capsule::raw("'Product Link' as link_type"))
+                ->get()->toArray();
+            
+            $detachedAssets = Capsule::table('mod_cloudflare_domain_infra')
+                ->join('tbldomains', 'mod_cloudflare_domain_infra.domain', '=', 'tbldomains.domain')
+                ->join('tblclients', 'tbldomains.userid', '=', 'tblclients.id')
+                ->where('mod_cloudflare_domain_infra.infra_id', $id)
+                ->select('tbldomains.id', 'tbldomains.domain', Capsule::raw("'Detached Domain' as product_name"), 'tblclients.firstname', 'tblclients.lastname', 'tbldomains.userid', Capsule::raw("'Direct IP Match' as link_type"))
+                ->get()->toArray();
+            
+            $allAssets = array_merge($assets, $detachedAssets);
         ?>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                 <p class="text-muted" style="margin:0;">These are active hosting services using products linked to this cluster.</p>
@@ -825,14 +870,20 @@ function cloudflare_output($vars) {
             <table class="cf-table-admin">
                 <thead><tr><th>Domain</th><th>Product</th><th>Client</th><th style="text-align:right;">Actions</th></tr></thead>
                 <tbody>
-                    <?php foreach ($assets as $a): ?>
+                    <?php foreach ($allAssets as $a): ?>
                         <tr>
                             <td><strong><?=$a->domain?></strong></td>
-                            <td><?=$a->product_name?></td>
+                            <td><?=$a->product_name?> <br><small class="text-muted"><?=$a->link_type?></small></td>
                             <td><a href="clientssummary.php?userid=<?=$a->userid?>"><?=$a->firstname?> <?=$a->lastname?></a></td>
-                            <td style="text-align:right;"><a href="clientshosting.php?userid=<?=$a->userid?>&id=<?=$a->id?>" class="btn btn-default btn-xs">View Service</a></td>
+                            <td style="text-align:right;">
+                                <?php if($a->link_type == 'Product Link'): ?>
+                                    <a href="clientshosting.php?userid=<?=$a->userid?>&id=<?=$a->id?>" class="btn btn-default btn-xs">View Service</a>
+                                <?php else: ?>
+                                    <a href="clientsdomains.php?userid=<?=$a->userid?>&id=<?=$a->id?>" class="btn btn-default btn-xs">View Domain</a>
+                                <?php endif; ?>
+                            </td>
                         </tr>
-                    <?php endforeach; if(count($assets)==0): ?>
+                    <?php endforeach; if(count($allAssets)==0): ?>
                         <tr><td colspan="4" class="text-center" style="padding:40px; color:#64748b;">No active assets linked to this cluster yet.</td></tr>
                     <?php endif; ?>
                 </tbody>
@@ -840,10 +891,53 @@ function cloudflare_output($vars) {
         <?php endif; ?>
     </div>
 <?php elseif ($action == 'sync'): 
-    // Logic to show domain sync status
-    $userAccounts = Capsule::table('mod_cloudflare_user_accounts')->get();
-    echo '<div class="cf-admin-card"><h4>Infrastructure Sync Hub</h4><p class="text-muted">Monitor global sync status across all client accounts.</p></div>';
+    $syncSettings = Capsule::table('mod_cloudflare_settings')->where('setting', 'sync_without_product')->value('value') == 'on';
+    $logs = Capsule::table('mod_cloudflare_logs')->where('action', 'SYNC_DNS')->orderBy('id', 'desc')->limit(50)->get();
+    $infra = Capsule::table('mod_cloudflare_infrastructure')->get();
 ?>
+    <div class="cf-admin-card">
+        <div class="cf-admin-header">
+            <h4><i class="fa fa-refresh"></i> Infrastructure Sync Hub</h4>
+            <button class="btn btn-warning btn-sm" onclick="repairAll(this)"><i class="fa fa-magic"></i> Force Global Re-Sync</button>
+        </div>
+        <div class="row" style="margin-bottom: 20px;">
+            <div class="col-md-4">
+                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <small class="text-muted">SYNC MODE</small>
+                    <h4 style="margin:5px 0;"><?= $syncSettings ? 'IP-Based (Open)' : 'Product-Based (Strict)' ?></h4>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <small class="text-muted">TOTAL CLUSTERS</small>
+                    <h4 style="margin:5px 0;"><?= count($infra) ?> Active</h4>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
+                    <small class="text-muted">RECENT SYNC ACTIVITY</small>
+                    <h4 style="margin:5px 0;"><?= count($logs) ?> Operations</h4>
+                </div>
+            </div>
+        </div>
+        
+        <h5>Recent Global Sync Events</h5>
+        <table class="cf-table-admin">
+            <thead><tr><th>Time</th><th>Domain</th><th>Cluster Match</th><th>Status</th></tr></thead>
+            <tbody>
+                <?php foreach ($logs as $l): ?>
+                    <tr>
+                        <td><small><?= date('M j, H:i', strtotime($l->created_at)) ?></small></td>
+                        <td><strong><?= $l->domain ?></strong></td>
+                        <td><span class="label label-default">Automatic</span></td>
+                        <td><span class="text-success"><i class="fa fa-check-circle"></i> Success</span></td>
+                    </tr>
+                <?php endforeach; if(count($logs)==0): ?>
+                    <tr><td colspan="4" class="text-center" style="padding:20px;">No recent sync activity logged.</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
     <?php elseif ($action == 'logs'): 
         $logs = Capsule::table('mod_cloudflare_logs')->orderBy('id', 'desc')->limit(100)->get();
     ?>
@@ -1067,6 +1161,7 @@ function cloudflare_clientarea($vars) {
             switch ($_POST['op']) {
                 case 'deleteZone':
                     $api->deleteZone($zoneId);
+                    cloudflare_log($clientId, $domain, 'DELETE_ZONE', "Domain removed from Cloudflare");
                     echo json_encode(['success' => true]); exit;
                 case 'addRecord':
                     $type = $_POST['type'];
@@ -1074,10 +1169,12 @@ function cloudflare_clientarea($vars) {
                     $content = $_POST['content'];
                     $proxied = isset($_POST['proxied']) && $_POST['proxied'] == 'true';
                     $api->addDNSRecord($zoneId, $type, $name, $content, 1, $proxied);
+                    cloudflare_log($clientId, $domain, 'ADD_RECORD', "Type: $type, Name: $name");
                     echo json_encode(['success' => true]); exit;
                 case 'deleteRecord':
                     $recordId = $_POST['record_id'];
                     $api->deleteDNSRecord($zoneId, $recordId);
+                    cloudflare_log($clientId, $domain, 'DELETE_RECORD', "Record ID: $recordId");
                     echo json_encode(['success' => true]); exit;
                 case 'editRecord':
                     $recordId = $_POST['record_id'];
@@ -1086,13 +1183,16 @@ function cloudflare_clientarea($vars) {
                     $content = $_POST['content'];
                     $proxied = isset($_POST['proxied']) && $_POST['proxied'] == 'true';
                     $api->updateDNSRecord($zoneId, $recordId, $type, $name, $content, 1, $proxied);
+                    cloudflare_log($clientId, $domain, 'EDIT_RECORD', "Type: $type, Name: $name");
                     echo json_encode(['success' => true]); exit;
                 case 'purgeCache':
                     $api->purgeCache($zoneId);
+                    cloudflare_log($clientId, $domain, 'PURGE_CACHE', "Cache purged successfully");
                     echo json_encode(['success' => true]); exit;
                 case 'pauseZone':
                     $pause = $_POST['pause'] == 'true';
                     $api->pauseZone($zoneId, $pause);
+                    cloudflare_log($clientId, $domain, 'PAUSE_ZONE', $pause ? "Cloudflare Paused" : "Cloudflare Resumed");
                     echo json_encode(['success' => true]); exit;
                 case 'syncDNS':
                     try {
@@ -1112,7 +1212,12 @@ function cloudflare_clientarea($vars) {
                             }
                         }
 
-                        // B. If no direct product match, fallback to IP-based detection (from Cloudflare A-record)
+                        // B. Check for manual domain mapping
+                        if (!$infraId) {
+                            $infraId = Capsule::table('mod_cloudflare_domain_infra')->where('domain', $domain)->value('infra_id');
+                        }
+
+                        // C. If no manual match, fallback to IP-based detection (from Cloudflare A-record)
                         if (!$infraId) {
                             $dnsRecords = $api->getDNSRecords($zoneId);
                             foreach ($dnsRecords['result'] as $r) {
@@ -1154,6 +1259,7 @@ function cloudflare_clientarea($vars) {
                             $errDetail = !empty($errors) ? " (Last Error: " . end($errors) . ")" : "";
                             throw new Exception("No templates could be applied to Cluster: " . ($infra->name ?? 'Unknown') . $errDetail);
                         }
+                        cloudflare_log($clientId, $domain, 'SYNC_DNS', "Successfully synchronized $count template records.");
                         echo json_encode(['success' => true, 'count' => $count]); exit;
 
                     } catch (\Exception $e) {
