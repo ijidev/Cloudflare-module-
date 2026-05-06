@@ -224,13 +224,13 @@ function cloudflare_output($vars) {
     $modulelink = $vars['modulelink'];
 
     // Helper for self-healing (Advanced Scan & IP Migration)
-    $repairInfra = function($infraId) {
+    $repairInfra = function($infraId, $force = false) {
         $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
         if (!$infra) return 0;
         
         $historicalIps = Capsule::table('mod_cloudflare_infrastructure_ips')->where('infra_id', $infraId)->pluck('ip')->toArray();
         $allTargetIps = array_unique(array_merge([$infra->ip], $historicalIps));
-        $syncWithoutProduct = Capsule::table('mod_cloudflare_settings')->where('setting', 'sync_without_product')->value('value') == 'on';
+        $syncWithoutProduct = $force ?: (Capsule::table('mod_cloudflare_settings')->where('setting', 'sync_without_product')->value('value') == 'on');
 
         $hosting = Capsule::table('tblhosting')->where('domainstatus', 'Active')->get();
         $repaired = 0;
@@ -317,11 +317,16 @@ function cloudflare_output($vars) {
                 if (!$acc) continue;
 
                 try {
-                    $publicIp = gethostbyname($domain);
-                    if (in_array($publicIp, $allTargetIps)) {
+                    $dnsRecords = dns_get_record($domain, DNS_A);
+                    $isMatch = false;
+                    foreach ($dnsRecords as $r) {
+                        if (in_array($r['ip'], $allTargetIps)) { $isMatch = true; break; }
+                    }
+                    
+                    if ($isMatch) {
                         Capsule::table('mod_cloudflare_domain_infra')->updateOrInsert(['domain' => $domain], ['infra_id' => $infraId]);
                         $repaired++;
-                        cloudflare_log($d->userid, $domain, 'AUTO_MAP', "Detached domain linked to infrastructure $infraId");
+                        cloudflare_log($d->userid, $domain, 'AUTO_MAP', "Detached domain linked to infrastructure $infraId (IP Match: {$dnsRecords[0]['ip']})");
                     }
                 } catch (\Exception $e) {}
             }
@@ -413,13 +418,13 @@ function cloudflare_output($vars) {
 
                 case 'repair_infra':
                     $id = (int)$_POST['id'];
-                    $count = $repairInfra($id);
+                    $count = $repairInfra($id, true); // Bypass setting
                     echo json_encode(['success' => true, 'repaired' => $count]); exit;
 
                 case 'repair_all':
                     $infras = Capsule::table('mod_cloudflare_infrastructure')->get();
                     $total = 0;
-                    foreach ($infras as $i) $total += $repairInfra($i->id);
+                    foreach ($infras as $i) $total += $repairInfra($i->id, true); // Bypass setting
                     echo json_encode(['success' => true, 'repaired' => $total]); exit;
             }
         } catch (\Exception $e) {
@@ -558,6 +563,31 @@ function cloudflare_output($vars) {
         <a href="<?=$modulelink?>&action=settings" class="<?=$action=='settings'?'active':''?>">General Settings</a>
     </div>
 
+    <script>
+        function repairAll(btn) {
+            const originalHtml = $(btn).html();
+            $(btn).prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Processing...');
+            $.post('<?=$modulelink?>', { ajax: '1', op: 'repair_all' }, function(res) {
+                $(btn).prop('disabled', false).html(originalHtml);
+                if (res.success) {
+                    alert('Global Sync complete. Repaired ' + res.repaired + ' assets.');
+                    location.reload();
+                } else alert('Error: ' + res.message);
+            });
+        }
+        function repairInfra(btn, id) {
+            const originalHtml = $(btn).html();
+            $(btn).prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Scanning...');
+            $.post('<?=$modulelink?>', { ajax: '1', op: 'repair_infra', id: id }, function(res) {
+                $(btn).prop('disabled', false).html(originalHtml);
+                if (res.success) {
+                    alert('Cluster Sync complete. Repaired ' + res.repaired + ' assets.');
+                    location.reload();
+                } else alert('Error: ' + res.message);
+            });
+        }
+    </script>
+
     <?php if ($action == 'infra'): 
         $infras = Capsule::table('mod_cloudflare_infrastructure')->get();
         $whmcsServers = Capsule::table('tblservers')->orderBy('name', 'asc')->get();
@@ -570,17 +600,7 @@ function cloudflare_output($vars) {
                 <button class="btn btn-primary btn-sm" onclick="$('#addInfraForm').toggle()"><i class="fa fa-plus"></i> New Cluster</button>
             </div>
         </div>
-        <script>
-            function repairAll(btn) {
-                const originalHtml = $(btn).html();
-                $(btn).prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Repairing All Clusters...');
-                $.post('<?=$modulelink?>', { ajax: '1', op: 'repair_all' }, function(res) {
-                    $(btn).prop('disabled', false).html(originalHtml);
-                    alert('Self-healing complete. Repaired ' + res.repaired + ' assets across all clusters.');
-                    location.reload();
-                });
-            }
-        </script>
+        </div>
         <div id="addInfraForm" style="display:none; margin-bottom: 20px; padding: 20px; background: #f8fafc; border-radius: 8px;">
             <form method="post" action="<?=$modulelink?>&action=add_infra">
                 <div class="row">
@@ -856,17 +876,7 @@ function cloudflare_output($vars) {
                 <p class="text-muted" style="margin:0;">These are active hosting services using products linked to this cluster.</p>
                 <button class="btn btn-warning btn-sm" onclick="repairInfra(this, <?=$id?>)"><i class="fa fa-magic"></i> Scan & Repair Assets</button>
             </div>
-            <script>
-                function repairInfra(btn, id) {
-                    const originalHtml = $(btn).html();
-                    $(btn).prop('disabled', true).html('<i class="fa fa-spinner fa-spin"></i> Scanning DNS...');
-                    $.post('<?=$modulelink?>', { ajax: '1', op: 'repair_infra', id: id }, function(res) {
-                        $(btn).prop('disabled', false).html(originalHtml);
-                        alert('Sync complete. Repaired ' + res.repaired + ' assets for this cluster.');
-                        location.reload();
-                    });
-                }
-            </script>
+            </div>
             <table class="cf-table-admin">
                 <thead><tr><th>Domain</th><th>Product</th><th>Client</th><th style="text-align:right;">Actions</th></tr></thead>
                 <tbody>
@@ -948,16 +958,39 @@ function cloudflare_output($vars) {
                 <tbody>
                     <?php foreach ($logs as $l): ?>
                         <tr>
-                            <td><small><?=date('M j, H:i', strtotime($l->created_at))?></small></td>
-                            <td>#<?=$l->client_id?></td>
-                            <td><?=$l->domain?></td>
-                            <td><span class="label label-info"><?=$l->action?></span></td>
-                            <td><small><?=$l->details?></small></td>
+                            <td><small><?= date('M j, H:i', strtotime($l->created_at)) ?></small></td>
+                            <td>#<?= $l->client_id ?></td>
+                            <td><strong><?= $l->domain ?></strong></td>
+                            <td><span class="label label-info"><?= $l->action ?></span></td>
+                            <td>
+                                <div style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    <?= htmlspecialchars($l->details) ?>
+                                </div>
+                                <a href="javascript:void(0)" onclick="viewLogDetails(<?= $l->id ?>, '<?= addslashes($l->domain) ?>', '<?= addslashes($l->action) ?>', '<?= addslashes($l->details) ?>')" style="font-size:11px;">[View Full]</a>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
+
+        <div id="logModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+            <div style="background:#fff; padding:25px; border-radius:12px; width:90%; max-width:600px; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+                <h4 id="logModalTitle" style="margin-top:0;">Log Details</h4>
+                <div id="logModalBody" style="background:#f8fafc; padding:15px; border-radius:8px; border:1px solid #e2e8f0; font-family:monospace; font-size:13px; max-height:400px; overflow-y:auto; word-break:break-all;"></div>
+                <div style="margin-top:20px; text-align:right;">
+                    <button class="btn btn-default" onclick="$('#logModal').hide()">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            function viewLogDetails(id, domain, action, details) {
+                $('#logModalTitle').text(action + ' - ' + domain);
+                $('#logModalBody').text(details);
+                $('#logModal').css('display', 'flex');
+            }
+        </script>
 
     <?php elseif ($action == 'settings'): 
         $settings = Capsule::table('mod_cloudflare_settings')->pluck('value', 'setting')->toArray();
@@ -1173,8 +1206,19 @@ function cloudflare_clientarea($vars) {
                     echo json_encode(['success' => true]); exit;
                 case 'deleteRecord':
                     $recordId = $_POST['record_id'];
+                    $logDetails = "Record ID: $recordId";
+                    try {
+                        $records = $api->getDNSRecords($zoneId);
+                        foreach (($records['result'] ?? []) as $r) {
+                            if ($r['id'] === $recordId) {
+                                $logDetails = "Deleted {$r['type']} record: {$r['name']} -> {$r['content']}";
+                                break;
+                            }
+                        }
+                    } catch (\Exception $e) {}
+                    
                     $api->deleteDNSRecord($zoneId, $recordId);
-                    cloudflare_log($clientId, $domain, 'DELETE_RECORD', "Record ID: $recordId");
+                    cloudflare_log($clientId, $domain, 'DELETE_RECORD', $logDetails);
                     echo json_encode(['success' => true]); exit;
                 case 'editRecord':
                     $recordId = $_POST['record_id'];
@@ -1245,21 +1289,26 @@ function cloudflare_clientarea($vars) {
                                 
                                 $api->addDNSRecord($zoneId, $t->type, $finalName, $finalContent, (int)$t->ttl, (bool)$t->proxied); 
                                 $count++;
+                                $appliedRecords[] = "Added {$t->type} $finalName";
                             } catch (\Exception $e) {
-                                // If error is "record already exists", we still consider it a "sync attempt"
                                 if (strpos($e->getMessage(), 'already exists') !== false) {
                                     $count++; 
+                                    $appliedRecords[] = "Skipped (Exists) {$t->type} $finalName";
                                 } else {
                                     $errors[] = $e->getMessage();
                                 }
                             }
                         }
                         
-                        if ($count == 0) {
+                        if ($count == 0 && !empty($templates)) {
                             $errDetail = !empty($errors) ? " (Last Error: " . end($errors) . ")" : "";
                             throw new Exception("No templates could be applied to Cluster: " . ($infra->name ?? 'Unknown') . $errDetail);
                         }
-                        cloudflare_log($clientId, $domain, 'SYNC_DNS', "Successfully synchronized $count template records.");
+                        
+                        $logMessage = "Synchronized $count records.\n\nAPPLIED:\n" . implode("\n", $appliedRecords);
+                        if (!empty($errors)) $logMessage .= "\n\nERRORS:\n" . implode("\n", $errors);
+                        
+                        cloudflare_log($clientId, $domain, 'SYNC_DNS', $logMessage);
                         echo json_encode(['success' => true, 'count' => $count]); exit;
 
                     } catch (\Exception $e) {
