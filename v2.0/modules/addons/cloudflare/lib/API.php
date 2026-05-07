@@ -113,9 +113,10 @@ class API
         return $this->request("zones/$zoneId/dns_records");
     }
 
-    public function addDNSRecord($zoneId, $type, $name, $content, $ttl = 1, $proxied = true)
+    public function addDNSRecord($zoneId, $type, $name, $content, $ttl = 1, $proxied = true, $priority = null)
     {
         $data = ['type' => $type, 'name' => $name, 'content' => $content, 'ttl' => $ttl, 'proxied' => $proxied];
+        if ($type === 'MX' && $priority !== null) $data['priority'] = (int)$priority;
         return $this->request("zones/$zoneId/dns_records", $data, 'POST');
     }
 
@@ -124,9 +125,10 @@ class API
         return $this->request("zones/$zoneId/dns_records/$recordId", [], 'DELETE');
     }
 
-    public function updateDNSRecord($zoneId, $recordId, $type, $name, $content, $ttl = 1, $proxied = true)
+    public function updateDNSRecord($zoneId, $recordId, $type, $name, $content, $ttl = 1, $proxied = true, $priority = null)
     {
         $data = ['type' => $type, 'name' => $name, 'content' => $content, 'ttl' => $ttl, 'proxied' => $proxied];
+        if ($type === 'MX' && $priority !== null) $data['priority'] = (int)$priority;
         return $this->request("zones/$zoneId/dns_records/$recordId", $data, 'PUT');
     }
 

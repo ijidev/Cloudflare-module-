@@ -190,11 +190,12 @@ function cloudflare_output($vars) {
                 $table->string('name', 255);
                 $table->text('content');
                 $table->integer('ttl')->default(1);
+                $table->integer('priority')->nullable();
                 $table->boolean('proxied')->default(true);
             });
-        } elseif (!Capsule::schema()->hasColumn('mod_cloudflare_templates', 'infra_id')) {
+        } elseif (!Capsule::schema()->hasColumn('mod_cloudflare_templates', 'priority')) {
             Capsule::schema()->table('mod_cloudflare_templates', function ($table) {
-                $table->integer('infra_id')->after('id');
+                $table->integer('priority')->nullable()->after('ttl');
             });
         }
 
@@ -451,35 +452,47 @@ function cloudflare_output($vars) {
         }
 
         if ($action == 'mass_sync_infra') {
-            $infraId = (int)$_POST['infra_id'];
-            $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
-            $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
-            $linkedProducts = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $infraId)->pluck('product_id')->toArray();
-            
-            // 1. Gather all domains linked to this infra
-            $domainsToSync = [];
-            
-            if (!empty($linkedProducts)) {
-                $hosting = Capsule::table('tblhosting')->whereIn('packageid', $linkedProducts)->where('domainstatus', 'Active')->select('domain', 'userid')->get();
-                foreach ($hosting as $h) { if (trim($h->domain)) $domainsToSync[trim($h->domain)] = $h->userid; }
-            }
-            
-            $detached = Capsule::table('mod_cloudflare_domain_infra')->where('infra_id', $infraId)->get();
-            foreach ($detached as $d) {
-                $whmcsDomain = Capsule::table('tbldomains')->where('domain', $d->domain)->where('status', 'Active')->first();
-                if ($whmcsDomain && !isset($domainsToSync[$d->domain])) $domainsToSync[$d->domain] = $whmcsDomain->userid;
-            }
+            try {
+                $infraId = (int)$_POST['infra_id'];
+                if (!$infraId) throw new \Exception("Invalid Infrastructure ID.");
+                
+                $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
+                if (!$infra) throw new \Exception("Infrastructure cluster not found.");
+                
+                $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
+                $linkedProducts = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $infraId)->pluck('product_id')->toArray();
+                
+                $domainsToSync = [];
+                if (!empty($linkedProducts)) {
+                    $hosting = Capsule::table('tblhosting')->whereIn('packageid', $linkedProducts)->where('domainstatus', 'Active')->select('domain', 'userid')->get();
+                    foreach ($hosting as $h) { if (trim($h->domain)) $domainsToSync[trim($h->domain)] = $h->userid; }
+                }
+                
+                $detached = Capsule::table('mod_cloudflare_domain_infra')->where('infra_id', $infraId)->get();
+                foreach ($detached as $d) {
+                    $whmcsDomain = Capsule::table('tbldomains')->where('domain', $d->domain)->where('status', 'Active')->first();
+                    if ($whmcsDomain && !isset($domainsToSync[$d->domain])) $domainsToSync[$d->domain] = $whmcsDomain->userid;
+                }
 
-            require_once __DIR__ . '/lib/API.php';
-            $count = 0;
-            
-            foreach ($domainsToSync as $domain => $userid) {
-                $acc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $userid)->first();
-                if (!$acc) continue;
-                try {
-                    $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
-                    $zid = $api->getZoneId($domain);
-                    if ($zid) {
+                require_once __DIR__ . '/lib/API.php';
+                $count = 0;
+                $globalErrors = [];
+                
+                foreach ($domainsToSync as $domain => $userid) {
+                    try {
+                        $acc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $userid)->first();
+                        if (!$acc) {
+                            $globalErrors[] = "Skipped $domain: No Cloudflare account linked to client #$userid";
+                            continue;
+                        }
+                        
+                        $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
+                        $zid = $api->getZoneId($domain);
+                        if (!$zid) {
+                            $globalErrors[] = "Skipped $domain: Zone not found in Cloudflare account.";
+                            continue;
+                        }
+
                         $existingRecords = $api->getDNSRecords($zid);
                         $appliedCount = 0;
                         $appliedLog = [];
@@ -488,42 +501,53 @@ function cloudflare_output($vars) {
                             $targetName = str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name);
                             $targetContent = str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content);
                             
-                            // Normalize targetName for Cloudflare (CF returns FQDN for records usually)
                             $normalizedTarget = $targetName;
                             if ($targetName === '@') $normalizedTarget = $domain;
                             elseif (strpos($targetName, '.') === false) $normalizedTarget = $targetName . '.' . $domain;
 
                             $found = false;
                             foreach (($existingRecords['result'] ?? []) as $er) {
-                                // Match type and normalized name
                                 if ($er['type'] == $t->type && ($er['name'] == $normalizedTarget || $er['name'] == $targetName)) {
-                                    if (trim($er['content']) != trim($targetContent) || $er['proxied'] != $t->proxied) {
-                                        $api->updateDNSRecord($zid, $er['id'], $t->type, $targetName, $targetContent, $t->ttl, $t->proxied);
-                                        $appliedLog[] = "Updated {$t->type} {$targetName} -> {$targetContent} (Proxied: " . ($t->proxied ? 'Yes' : 'No') . ")";
+                                    $mismatch = (trim($er['content']) != trim($targetContent) || $er['proxied'] != $t->proxied);
+                                    if ($t->type === 'MX' && isset($er['priority']) && $er['priority'] != $t->priority) $mismatch = true;
+                                    
+                                    if ($mismatch) {
+                                        $api->updateDNSRecord($zid, $er['id'], $t->type, $targetName, $targetContent, $t->ttl, $t->proxied, $t->priority);
+                                        $appliedLog[] = "Updated {$t->type} {$targetName} -> {$targetContent} (Prio: ".($t->priority??'0').")";
                                         $appliedCount++;
                                     } else {
-                                        $appliedLog[] = "Skipped (Matches) {$t->type} {$targetName}";
+                                        $appliedLog[] = "Matches {$t->type} {$targetName}";
                                     }
                                     $found = true; break;
                                 }
                             }
                             
                             if (!$found) {
-                                $api->addDNSRecord($zid, $t->type, $targetName, $targetContent, $t->ttl, $t->proxied);
-                                $appliedLog[] = "Added {$t->type} {$targetName} -> {$targetContent}";
+                                $api->addDNSRecord($zid, $t->type, $targetName, $targetContent, $t->ttl, $t->proxied, $t->priority);
+                                $appliedLog[] = "Added {$t->type} {$targetName} -> {$targetContent} (Prio: ".($t->priority??'0').")";
                                 $appliedCount++;
                             }
                         }
                         
-                        if (!empty($appliedLog)) {
-                            $logMessage = "Force Sync Domain:\n • " . implode("\n • ", $appliedLog);
+                        if ($appliedCount > 0) {
+                            $logMessage = "Mass Sync: Applied changes to $domain\n" . implode("\n", $appliedLog);
                             cloudflare_log($userid, $domain, 'SYNC_DNS', $logMessage);
+                            $count++;
                         }
-                        if ($appliedCount > 0) $count++;
+                    } catch (\Exception $de) {
+                        $globalErrors[] = "Error syncing $domain: " . $de->getMessage();
                     }
-                } catch (\Exception $e) { }
+                }
+                
+                if (!empty($globalErrors)) {
+                    $errorSummary = "Partial success. Encounted errors:\n" . implode("\n", $globalErrors);
+                    cloudflare_log(0, 'SYSTEM', 'SYNC_ERROR', $errorSummary);
+                }
+                
+                header("Location: $modulelink&action=manage_infra&id=$infraId&success=mass_sync&count=$count" . (!empty($globalErrors) ? "&error_count=".count($globalErrors) : "")); exit;
+            } catch (\Exception $ge) {
+                header("Location: $modulelink&action=infra&error=" . urlencode($ge->getMessage())); exit;
             }
-            header("Location: $modulelink&action=manage_infra&id=$infraId&success=mass_sync&count=$count"); exit;
         }
         
         if ($action == 'delete_infra') {
@@ -540,9 +564,10 @@ function cloudflare_output($vars) {
                 'name' => $_POST['name'],
                 'content' => $_POST['content'],
                 'ttl' => (int)$_POST['ttl'],
-                'proxied' => isset($_POST['proxied']) ? 1 : 0
+                'priority' => $_POST['priority'] !== '' ? (int)$_POST['priority'] : null,
+                'proxied' => $_POST['proxied'] == 'true'
             ]);
-            header("Location: $modulelink&action=manage_infra&id=" . $_POST['infra_id'] . "&tab=templates&success=1"); exit;
+            echo json_encode(['success' => true]); exit;
         }
 
         if ($action == 'update_template') {
@@ -551,9 +576,10 @@ function cloudflare_output($vars) {
                 'name' => $_POST['name'],
                 'content' => $_POST['content'],
                 'ttl' => (int)$_POST['ttl'],
-                'proxied' => isset($_POST['proxied']) ? 1 : 0
+                'priority' => $_POST['priority'] !== '' ? (int)$_POST['priority'] : null,
+                'proxied' => $_POST['proxied'] == 'true'
             ]);
-            header("Location: $modulelink&action=manage_infra&id=" . $_POST['infra_id'] . "&tab=templates&success=1"); exit;
+            echo json_encode(['success' => true]); exit;
         }
 
         if ($action == 'delete_template') {
@@ -600,6 +626,23 @@ function cloudflare_output($vars) {
         <a href="<?=$modulelink?>&action=logs" class="<?=$action=='logs'?'active':''?>">System Logs</a>
         <a href="<?=$modulelink?>&action=settings" class="<?=$action=='settings'?'active':''?>">General Settings</a>
     </div>
+
+    <?php if (isset($_GET['success'])): ?>
+        <?php if ($_GET['success'] == 'mass_sync'): ?>
+            <div class="alert alert-success">
+                <i class="fa fa-check-circle"></i> <strong>Mass Sync Complete!</strong> Successfully synchronized <?=(int)$_GET['count']?> domains.
+                <?php if (isset($_GET['error_count'])): ?>
+                    <br><i class="fa fa-exclamation-triangle"></i> Encounted <?=(int)$_GET['error_count']?> errors. Check <b>System Logs</b> for details.
+                <?php endif; ?>
+            </div>
+        <?php elseif ($_GET['success'] == 'infra_updated'): ?>
+             <div class="alert alert-success">Cluster configuration updated successfully.</div>
+        <?php endif; ?>
+    <?php endif; ?>
+
+    <?php if (isset($_GET['error'])): ?>
+        <div class="alert alert-danger"><i class="fa fa-times-circle"></i> <strong>Error:</strong> <?=htmlspecialchars($_GET['error'])?></div>
+    <?php endif; ?>
 
     <script>
         function repairAll(btn) {
@@ -726,6 +769,7 @@ function cloudflare_output($vars) {
                         <th>Name</th>
                         <th>Content</th>
                         <th>TTL</th>
+                        <th>Prio</th>
                         <th>Proxy</th>
                         <th style="text-align:right;">Actions</th>
                     </tr>
@@ -739,6 +783,7 @@ function cloudflare_output($vars) {
                         <td><code><?=$t->name?></code></td>
                         <td><code><?=$t->content?></code></td>
                         <td><?=$t->ttl == 1 ? 'Auto' : $t->ttl?></td>
+                        <td><?=$t->type == 'MX' ? $t->priority : '-'?></td>
                         <td><i class="fa fa-circle <?=$t->proxied?'text-success':'text-muted'?>"></i></td>
                         <td style="text-align:right;">
                             <button type="button" class="btn btn-default btn-xs" onclick="openEditModal(<?=htmlspecialchars(json_encode($t))?>)"><i class="fa fa-edit"></i> Edit</button>
@@ -751,6 +796,7 @@ function cloudflare_output($vars) {
                         <td><input type="text" id="new-name" class="form-control input-sm" placeholder="@"></td>
                         <td><input type="text" id="new-content" class="form-control input-sm" placeholder="{ip}"></td>
                         <td><input type="text" id="new-ttl" class="form-control input-sm" value="1"></td>
+                        <td><input type="number" id="new-priority" class="form-control input-sm" placeholder="10" style="width:60px;"></td>
                         <td><input type="checkbox" id="new-proxied" checked></td>
                         <td style="text-align:right; display:flex; gap:10px; justify-content: flex-end; align-items: center;">
                             <button type="button" id="btnAddTmpl" class="btn btn-success btn-sm" onclick="addTemplate()"><i class="fa fa-plus"></i> Add Record</button>
@@ -777,6 +823,7 @@ function cloudflare_output($vars) {
                             <div class="form-group"><label>Name</label><input type="text" id="edit-name" class="form-control"></div>
                             <div class="form-group"><label>Content</label><input type="text" id="edit-content" class="form-control"></div>
                             <div class="form-group"><label>TTL</label><input type="text" id="edit-ttl" class="form-control"></div>
+                            <div class="form-group" id="edit-priority-wrapper"><label>Priority (MX only)</label><input type="number" id="edit-priority" class="form-control"></div>
                             <div class="form-group"><label><input type="checkbox" id="edit-proxied"> Cloudflare Proxy</label></div>
                         </div>
                         <div class="modal-footer">
@@ -797,6 +844,7 @@ function cloudflare_output($vars) {
                         ajax: '1', op: 'add_template', infra_id: '<?=$id?>',
                         type: $('#new-type').val(), name: $('#new-name').val(),
                         content: $('#new-content').val(), ttl: $('#new-ttl').val(),
+                        priority: $('#new-priority').val(),
                         proxied: $('#new-proxied').is(':checked')
                     };
                     $.post('<?=$modulelink?>', data, function(res) {
@@ -808,7 +856,9 @@ function cloudflare_output($vars) {
                 function openEditModal(data) {
                     $('#edit-id').val(data.id); $('#edit-type').val(data.type);
                     $('#edit-name').val(data.name); $('#edit-content').val(data.content);
-                    $('#edit-ttl').val(data.ttl); $('#edit-proxied').prop('checked', data.proxied == 1);
+                    $('#edit-ttl').val(data.ttl); $('#edit-priority').val(data.priority);
+                    $('#edit-proxied').prop('checked', data.proxied == 1);
+                    if (data.type === 'MX') $('#edit-priority-wrapper').show(); else $('#edit-priority-wrapper').hide();
                     $('#editTmplModal').modal('show');
                 }
                 function saveTemplate() {
@@ -818,6 +868,7 @@ function cloudflare_output($vars) {
                         ajax: '1', op: 'update_template', id: $('#edit-id').val(), infra_id: '<?=$id?>',
                         type: $('#edit-type').val(), name: $('#edit-name').val(),
                         content: $('#edit-content').val(), ttl: $('#edit-ttl').val(),
+                        priority: $('#edit-priority').val(),
                         proxied: $('#edit-proxied').is(':checked')
                     };
                     $.post('<?=$modulelink?>', data, function(res) {
