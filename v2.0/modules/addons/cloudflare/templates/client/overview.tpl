@@ -52,13 +52,12 @@
             </div>
         </div>
 
-        <!-- Main Navigation Tabs -->
         <div class="cf-tab-nav animate-slide-up">
             <button class="cf-tab-btn active" onclick="switchTab('accounts', this)">
                 <i class="fa fa-key"></i> Managed Accounts
             </button>
             <button class="cf-tab-btn" onclick="switchTab('proxied', this)">
-                <i class="fa fa-shield"></i> Active Assets
+                <i class="fa fa-shield"></i> Proxied Domains
             </button>
             <button class="cf-tab-btn" onclick="switchTab('all', this)">
                 <i class="fa fa-globe"></i> Sync Domains

@@ -235,84 +235,76 @@ function cloudflare_output($vars) {
         $repaired = 0;
         require_once __DIR__ . '/lib/API.php';
 
-        // 1. Scan Cloudflare Zones directly (Deep Scan)
-        // This is the most reliable way to find domains already on CF pointing to us.
+        // 1. Collect all WHMCS Domains
+        $hostingDomains = Capsule::table('tblhosting')->where('domainstatus', 'Active')->select('domain', 'packageid', 'userid')->get();
+        $otherDomains = Capsule::table('tbldomains')->where('status', 'Active')->select('domain', 'userid')->get();
+        
+        $allDomains = [];
+        foreach ($hostingDomains as $h) { if(trim($h->domain)) $allDomains[trim($h->domain)] = ['type' => 'product', 'id' => $h->packageid, 'user' => $h->userid]; }
+        foreach ($otherDomains as $d) { if(trim($d->domain) && !isset($allDomains[trim($d->domain)])) $allDomains[trim($d->domain)] = ['type' => 'domain', 'id' => null, 'user' => $d->userid]; }
+
+        // Cache CF accounts to avoid repeated queries
+        $cfAccounts = [];
         $accounts = Capsule::table('mod_cloudflare_user_accounts')->get();
         foreach ($accounts as $acc) {
-            try {
-                $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
-                $zones = $api->getZones();
-                foreach (($zones ?: []) as $z) {
-                    $domain = $z['name'];
-                    // If already linked to this cluster, we still might want to sync templates later, 
-                    // but for "repair" we only care about unlinked ones.
-                    if (Capsule::table('mod_cloudflare_domain_infra')->where('domain', $domain)->exists()) continue;
-
-                    $records = $api->getDNSRecords($z['id']);
-                    $isMatch = false;
-                    foreach (($records['result'] ?? []) as $r) {
-                        if ($r['type'] === 'A' && in_array($r['content'], $allTargetIps)) {
-                            $isMatch = true; break;
-                        }
-                    }
-
-                    if ($isMatch) {
-                        Capsule::table('mod_cloudflare_domain_infra')->updateOrInsert(['domain' => $domain], ['infra_id' => $infraId]);
-                        $repaired++;
-                        cloudflare_log($acc->client_id, $domain, 'AUTO_MAP', "Deep Scan Match: Zone '{$domain}' found in Cloudflare account pointing to cluster IP. Linked successfully.");
-                    }
-                }
-            } catch (\Exception $e) {}
+            $cfAccounts[$acc->client_id][] = $acc;
         }
 
-        // 2. Scan tblhosting (Product-based linking)
-        $hosting = Capsule::table('tblhosting')->where('domainstatus', 'Active')->get();
-        foreach ($hosting as $s) {
-            $domain = trim($s->domain);
-            if (!$domain) continue;
+        foreach ($allDomains as $domain => $data) {
+            $isProductLink = ($data['type'] == 'product');
+            $existingProductLink = $isProductLink ? Capsule::table('mod_cloudflare_product_infra')->where('product_id', $data['id'])->first() : null;
+            $existingDomainLink = Capsule::table('mod_cloudflare_domain_infra')->where('domain', $domain)->first();
 
-            $existingLink = Capsule::table('mod_cloudflare_product_infra')->where('product_id', $s->packageid)->first();
-            if ($existingLink && $existingLink->infra_id != $infraId) continue;
-            if (!$existingLink && !$syncWithoutProduct) continue;
+            // Skip if already correctly linked to THIS cluster
+            if ($existingProductLink && $existingProductLink->infra_id == $infraId) continue;
+            if ($existingDomainLink && $existingDomainLink->infra_id == $infraId) continue;
+            
+            // If strictly checking products and it's not a product link, skip
+            if (!$isProductLink && !$syncWithoutProduct) continue;
 
+            $isMatch = false;
+
+            // Check 1: Public DNS
             try {
                 $publicDns = dns_get_record($domain, DNS_A);
-                $isMatch = false;
                 foreach ($publicDns as $rec) {
                     if (in_array($rec['ip'], $allTargetIps)) { $isMatch = true; break; }
                 }
-
-                if ($isMatch) {
-                    if (!$existingLink) {
-                        Capsule::table('mod_cloudflare_product_infra')->updateOrInsert(['product_id' => $s->packageid], ['infra_id' => $infraId]);
-                    }
-                    $repaired++;
-                    // We don't log every product link to avoid clutter, but it counts as repaired.
-                }
             } catch (\Exception $e) {}
-        }
 
-        // 3. Scan tbldomains (Detached domains via Public DNS)
-        if ($syncWithoutProduct) {
-            $whmcsDomains = Capsule::table('tbldomains')->where('status', 'Active')->get();
-            foreach ($whmcsDomains as $d) {
-                $domain = trim($d->domain);
-                if (!$domain) continue;
-                if (Capsule::table('mod_cloudflare_domain_infra')->where('domain', $domain)->exists()) continue;
+            // Check 2: Deep Scan via CF API (if public DNS failed, e.g., proxied)
+            if (!$isMatch && isset($cfAccounts[$data['user']])) {
+                foreach ($cfAccounts[$data['user']] as $acc) {
+                    try {
+                        $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
+                        $zoneId = $api->getZoneId($domain);
+                        if ($zoneId) {
+                            $records = $api->getDNSRecords($zoneId);
+                            foreach (($records['result'] ?? []) as $r) {
+                                if ($r['type'] === 'A' && in_array($r['content'], $allTargetIps)) {
+                                    $isMatch = true; break 2;
+                                }
+                            }
+                        }
+                    } catch (\Exception $e) {}
+                }
+            }
 
-                try {
-                    $publicDns = dns_get_record($domain, DNS_A);
-                    $isMatch = false;
-                    foreach ($publicDns as $rec) {
-                        if (in_array($rec['ip'], $allTargetIps)) { $isMatch = true; break; }
+            if ($isMatch) {
+                if ($isProductLink) {
+                    if (!$existingProductLink) {
+                        Capsule::table('mod_cloudflare_product_infra')->updateOrInsert(['product_id' => $data['id']], ['infra_id' => $infraId]);
+                        // Remove from domain infra if it was previously there to avoid duplicate entries
+                        Capsule::table('mod_cloudflare_domain_infra')->where('domain', $domain)->delete();
+                        $repaired++;
                     }
-
-                    if ($isMatch) {
+                } else {
+                    if (!$existingDomainLink) {
                         Capsule::table('mod_cloudflare_domain_infra')->updateOrInsert(['domain' => $domain], ['infra_id' => $infraId]);
                         $repaired++;
-                        cloudflare_log($d->userid, $domain, 'AUTO_MAP', "Public DNS Match: Detached domain '{$domain}' points to cluster IP. Linked successfully.");
+                        cloudflare_log($data['user'], $domain, 'AUTO_MAP', "Detached domain '{$domain}' matched to cluster IP. Linked successfully.");
                     }
-                } catch (\Exception $e) {}
+                }
             }
         }
 
@@ -452,21 +444,64 @@ function cloudflare_output($vars) {
             $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
             $linkedProducts = Capsule::table('mod_cloudflare_product_infra')->where('infra_id', $infraId)->pluck('product_id')->toArray();
             
-            $domainsToSync = Capsule::table('tblhosting')->join('tbldomains', 'tblhosting.domain', '=', 'tbldomains.domain')->whereIn('tblhosting.packageid', $linkedProducts)->where('tblhosting.domainstatus', 'Active')->select('tbldomains.domain', 'tbldomains.userid')->get();
+            // 1. Gather all domains linked to this infra
+            $domainsToSync = [];
+            
+            if (!empty($linkedProducts)) {
+                $hosting = Capsule::table('tblhosting')->whereIn('packageid', $linkedProducts)->where('domainstatus', 'Active')->select('domain', 'userid')->get();
+                foreach ($hosting as $h) { if (trim($h->domain)) $domainsToSync[trim($h->domain)] = $h->userid; }
+            }
+            
+            $detached = Capsule::table('mod_cloudflare_domain_infra')->where('infra_id', $infraId)->get();
+            foreach ($detached as $d) {
+                $whmcsDomain = Capsule::table('tbldomains')->where('domain', $d->domain)->where('status', 'Active')->first();
+                if ($whmcsDomain && !isset($domainsToSync[$d->domain])) $domainsToSync[$d->domain] = $whmcsDomain->userid;
+            }
 
             require_once __DIR__ . '/lib/API.php';
             $count = 0;
-            foreach ($domainsToSync as $d) {
-                $acc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $d->userid)->first();
+            
+            foreach ($domainsToSync as $domain => $userid) {
+                $acc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', $userid)->first();
                 if (!$acc) continue;
                 try {
                     $api = new \WHMCS\Module\Addon\Cloudflare\API($acc->api_token, $acc->email);
-                    $zid = $api->getZoneId($d->domain);
+                    $zid = $api->getZoneId($domain);
                     if ($zid) {
+                        $existingRecords = $api->getDNSRecords($zid);
+                        $appliedCount = 0;
+                        $appliedLog = [];
+                        
                         foreach ($templates as $t) {
-                            $api->addDNSRecord($zid, $t->type, str_replace(['{domain}', '{ip}'], [$d->domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$d->domain, $infra->ip], $t->content), $t->ttl, $t->proxied);
+                            $targetName = str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name);
+                            $targetContent = str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content);
+                            
+                            $found = false;
+                            foreach (($existingRecords['result'] ?? []) as $er) {
+                                if ($er['type'] == $t->type && $er['name'] == $targetName) {
+                                    if ($er['content'] != $targetContent || $er['proxied'] != $t->proxied) {
+                                        $api->updateDNSRecord($zid, $er['id'], $t->type, $targetName, $targetContent, $t->ttl, $t->proxied);
+                                        $appliedLog[] = "Updated {$t->type} {$targetName} -> {$targetContent}";
+                                        $appliedCount++;
+                                    } else {
+                                        $appliedLog[] = "Skipped (Exists) {$t->type} {$targetName}";
+                                    }
+                                    $found = true; break;
+                                }
+                            }
+                            
+                            if (!$found) {
+                                $api->addDNSRecord($zid, $t->type, $targetName, $targetContent, $t->ttl, $t->proxied);
+                                $appliedLog[] = "Added {$t->type} {$targetName} -> {$targetContent}";
+                                $appliedCount++;
+                            }
                         }
-                        $count++;
+                        
+                        if (!empty($appliedLog)) {
+                            $logMessage = "Force Sync Domain:\n • " . implode("\n • ", $appliedLog);
+                            cloudflare_log($userid, $domain, 'SYNC_DNS', $logMessage);
+                        }
+                        if ($appliedCount > 0) $count++;
                     }
                 } catch (\Exception $e) { }
             }
