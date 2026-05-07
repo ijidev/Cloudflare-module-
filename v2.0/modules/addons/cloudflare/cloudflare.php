@@ -368,6 +368,7 @@ function cloudflare_output($vars) {
                         'name' => $_POST['name'],
                         'content' => $_POST['content'],
                         'ttl' => (int)$_POST['ttl'],
+                        'priority' => $_POST['priority'] !== '' ? (int)$_POST['priority'] : null,
                         'proxied' => $_POST['proxied'] == 'true' ? 1 : 0,
                     ]);
                     echo json_encode(['success' => true, 'id' => $id]); exit;
@@ -383,6 +384,7 @@ function cloudflare_output($vars) {
                         'name' => $_POST['name'],
                         'content' => $_POST['content'],
                         'ttl' => (int)$_POST['ttl'],
+                        'priority' => $_POST['priority'] !== '' ? (int)$_POST['priority'] : null,
                         'proxied' => $_POST['proxied'] == 'true' ? 1 : 0,
                     ]);
                     echo json_encode(['success' => true]); exit;
@@ -555,31 +557,6 @@ function cloudflare_output($vars) {
             Capsule::table('mod_cloudflare_infrastructure')->where('id', $id)->delete();
             Capsule::table('mod_cloudflare_templates')->where('infra_id', $id)->delete();
             header("Location: $modulelink&action=infra&success=infra_deleted"); exit;
-        }
-
-        if ($action == 'add_template') {
-            Capsule::table('mod_cloudflare_templates')->insert([
-                'infra_id' => (int)$_POST['infra_id'],
-                'type' => $_POST['type'],
-                'name' => $_POST['name'],
-                'content' => $_POST['content'],
-                'ttl' => (int)$_POST['ttl'],
-                'priority' => $_POST['priority'] !== '' ? (int)$_POST['priority'] : null,
-                'proxied' => $_POST['proxied'] == 'true'
-            ]);
-            echo json_encode(['success' => true]); exit;
-        }
-
-        if ($action == 'update_template') {
-            Capsule::table('mod_cloudflare_templates')->where('id', (int)$_POST['id'])->update([
-                'type' => $_POST['type'],
-                'name' => $_POST['name'],
-                'content' => $_POST['content'],
-                'ttl' => (int)$_POST['ttl'],
-                'priority' => $_POST['priority'] !== '' ? (int)$_POST['priority'] : null,
-                'proxied' => $_POST['proxied'] == 'true'
-            ]);
-            echo json_encode(['success' => true]); exit;
         }
 
         if ($action == 'delete_template') {
