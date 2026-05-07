@@ -289,6 +289,21 @@ function cloudflare_output($vars) {
                     } catch (\Exception $e) {}
                 }
             }
+            if ($isMatch) {
+                if ($isProductLink) {
+                    if (!$existingProductLink) {
+                        Capsule::table('mod_cloudflare_product_infra')->updateOrInsert(['product_id' => $data['id']], ['infra_id' => $infraId]);
+                        $repaired++;
+                    }
+                } else {
+                    if (!$existingDomainLink) {
+                        Capsule::table('mod_cloudflare_domain_infra')->updateOrInsert(['domain' => $domain], ['infra_id' => $infraId]);
+                        $repaired++;
+                        cloudflare_log($data['user'], $domain, 'AUTO_MAP', "Detached domain '{$domain}' matched to cluster IP. Linked successfully.");
+                    }
+                }
+            }
+        }
 
         // Aggressive Cleanup: Remove any entries from mod_cloudflare_domain_infra that are now covered by product links
         try {
