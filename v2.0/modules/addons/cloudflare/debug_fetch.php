@@ -37,11 +37,15 @@ try {
 }
 echo "</div>";
 
-// Section: Specific Domain Check (gottaexchange.org)
+// Section: Specific Domain Check
 echo "<div class='card'>";
-echo "<h3>2. Targeted Domain Check: <code>gottaexchange.org</code></h3>";
-$targetDomain = "gottaexchange.org";
-$targetAcc = Capsule::table('mod_cloudflare_user_accounts')->first(); // Try to find any account to query with
+echo "<h3>2. Targeted Domain Diagnostic</h3>";
+$targetDomain = $_GET['domain'] ?: "gottaexchange.org";
+$targetAcc = Capsule::table('mod_cloudflare_user_accounts')->where('client_id', function($query) use ($targetDomain) {
+    $query->select('userid')->from('tbldomains')->where('domain', $targetDomain);
+})->first();
+
+if (!$targetAcc) $targetAcc = Capsule::table('mod_cloudflare_user_accounts')->first();
 
 if ($targetAcc) {
     try {
@@ -51,6 +55,14 @@ if ($targetAcc) {
         if ($zoneId) {
             echo "Zone ID for $targetDomain: <span class='success'>$zoneId</span><br>";
             $records = $api->getDNSRecords($zoneId);
+            
+            echo "<h4>Current DNS Records on Cloudflare:</h4><table><thead><tr><th>Type</th><th>Name</th><th>Content</th><th>Proxy</th></tr></thead><tbody>";
+            foreach ($records['result'] as $r) {
+                echo "<tr><td>{$r['type']}</td><td>{$r['name']}</td><td>" . substr($r['content'], 0, 50) . "</td><td>" . ($r['proxied'] ? '✅' : '❌') . "</td></tr>";
+            }
+            echo "</tbody></table>";
+
+            // Find matching cluster
             $aRecord = null;
             foreach ($records['result'] as $r) {
                 if ($r['type'] === 'A' && ($r['name'] === $targetDomain || $r['name'] === 'www.'.$targetDomain)) {
@@ -60,16 +72,45 @@ if ($targetAcc) {
             }
 
             if ($aRecord) {
-                echo "A Record Content: <span class='info'>$aRecord</span><br>";
-                // Check if this matches any infrastructure IP
                 $infra = Capsule::table('mod_cloudflare_infrastructure')->where('ip', $aRecord)->first();
                 if ($infra) {
-                    echo "Cluster Match: <span class='success'>FOUND (Cluster: {$infra->name}, ID: {$infra->id})</span><br>";
+                    echo "<br>Cluster Match: <span class='success'>FOUND (Cluster: {$infra->name}, ID: {$infra->id})</span>";
+                    
+                    // Simulation Section
+                    echo "<h4>3. Template Sync Simulation (Against Cluster: {$infra->name})</h4>";
+                    $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infra->id)->get();
+                    echo "<table><thead><tr><th>Template Record</th><th>Status</th><th>Action Required</th></tr></thead><tbody>";
+                    foreach ($templates as $t) {
+                        $targetName = str_replace(['{domain}', '{ip}'], [$targetDomain, $infra->ip], $t->name);
+                        $targetContent = str_replace(['{domain}', '{ip}'], [$targetDomain, $infra->ip], $t->content);
+                        
+                        $normalizedTarget = $targetName === '@' ? $targetDomain : (strpos($targetName, '.') === false ? $targetName . '.' . $targetDomain : $targetName);
+                        
+                        $foundMatch = false;
+                        $needsUpdate = false;
+                        foreach ($records['result'] as $er) {
+                            if ($er['type'] == $t->type && ($er['name'] == $normalizedTarget || $er['name'] == $targetName)) {
+                                $foundMatch = true;
+                                if (trim($er['content']) != trim($targetContent) || $er['proxied'] != $t->proxied) {
+                                    $needsUpdate = true;
+                                }
+                                break;
+                            }
+                        }
+
+                        echo "<tr><td>{$t->type} {$targetName}</td>";
+                        if ($foundMatch) {
+                            if ($needsUpdate) echo "<td><span class='warning'>Mismatched</span></td><td><span class='info'>UPDATE</span></td>";
+                            else echo "<td><span class='success'>Synced</span></td><td><span>None</span></td>";
+                        } else {
+                            echo "<td><span class='error'>Missing</span></td><td><span class='success'>ADD</span></td>";
+                        }
+                        echo "</tr>";
+                    }
+                    echo "</tbody></table>";
                 } else {
-                    echo "Cluster Match: <span class='warning'>NONE (This IP does not match any registered infrastructure)</span><br>";
+                    echo "<br>Cluster Match: <span class='warning'>NONE (A record points to {$aRecord} which is not a registered infrastructure IP)</span>";
                 }
-            } else {
-                echo "A Record: <span class='error'>NOT FOUND in Cloudflare Zone</span><br>";
             }
         } else {
             echo "Zone Check: <span class='error'>Domain not found in the connected Cloudflare accounts</span><br>";
@@ -78,7 +119,7 @@ if ($targetAcc) {
         echo "API Error: <span class='error'>" . $e->getMessage() . "</span><br>";
     }
 } else {
-    echo "<span class='error'>No Cloudflare accounts connected to perform API lookups.</span>";
+    echo "<span class='error'>No Cloudflare accounts found.</span>";
 }
 echo "</div>";
 

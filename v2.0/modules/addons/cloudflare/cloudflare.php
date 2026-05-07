@@ -3,7 +3,7 @@
  * Cloudflare WHMCS Core Integration Addon
  *
  * @package    WHMCS
- * @author     everestserver.com
+ * @author     ikenna julian
  * @copyright  Copyright (c) 2026
  * @license    MIT
  */
@@ -34,7 +34,7 @@ function cloudflare_config() {
     return [
         'name' => 'Cloudflare Manager',
         'description' => 'Strict Infrastructure-based Cloudflare management.',
-        'author' => 'everestserver.com',
+        'author' => 'iheanyi ikenna (ijidev)',
         'language' => 'english',
         'version' => '2.2',
         'fields' => [
@@ -290,23 +290,20 @@ function cloudflare_output($vars) {
                 }
             }
 
-            if ($isMatch) {
-                if ($isProductLink) {
-                    if (!$existingProductLink) {
-                        Capsule::table('mod_cloudflare_product_infra')->updateOrInsert(['product_id' => $data['id']], ['infra_id' => $infraId]);
-                        // Remove from domain infra if it was previously there to avoid duplicate entries
-                        Capsule::table('mod_cloudflare_domain_infra')->where('domain', $domain)->delete();
-                        $repaired++;
-                    }
-                } else {
-                    if (!$existingDomainLink) {
-                        Capsule::table('mod_cloudflare_domain_infra')->updateOrInsert(['domain' => $domain], ['infra_id' => $infraId]);
-                        $repaired++;
-                        cloudflare_log($data['user'], $domain, 'AUTO_MAP', "Detached domain '{$domain}' matched to cluster IP. Linked successfully.");
-                    }
-                }
+        // Aggressive Cleanup: Remove any entries from mod_cloudflare_domain_infra that are now covered by product links
+        try {
+            $productLinkedDomains = Capsule::table('tblhosting')
+                ->join('mod_cloudflare_product_infra', 'tblhosting.packageid', '=', 'mod_cloudflare_product_infra.product_id')
+                ->where('tblhosting.domainstatus', 'Active')
+                ->pluck('tblhosting.domain')
+                ->toArray();
+            
+            if (!empty($productLinkedDomains)) {
+                Capsule::table('mod_cloudflare_domain_infra')
+                    ->whereIn('domain', array_filter($productLinkedDomains))
+                    ->delete();
             }
-        }
+        } catch (\Exception $e) {}
 
         return $repaired;
     };
@@ -476,15 +473,21 @@ function cloudflare_output($vars) {
                             $targetName = str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name);
                             $targetContent = str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content);
                             
+                            // Normalize targetName for Cloudflare (CF returns FQDN for records usually)
+                            $normalizedTarget = $targetName;
+                            if ($targetName === '@') $normalizedTarget = $domain;
+                            elseif (strpos($targetName, '.') === false) $normalizedTarget = $targetName . '.' . $domain;
+
                             $found = false;
                             foreach (($existingRecords['result'] ?? []) as $er) {
-                                if ($er['type'] == $t->type && $er['name'] == $targetName) {
-                                    if ($er['content'] != $targetContent || $er['proxied'] != $t->proxied) {
+                                // Match type and normalized name
+                                if ($er['type'] == $t->type && ($er['name'] == $normalizedTarget || $er['name'] == $targetName)) {
+                                    if (trim($er['content']) != trim($targetContent) || $er['proxied'] != $t->proxied) {
                                         $api->updateDNSRecord($zid, $er['id'], $t->type, $targetName, $targetContent, $t->ttl, $t->proxied);
-                                        $appliedLog[] = "Updated {$t->type} {$targetName} -> {$targetContent}";
+                                        $appliedLog[] = "Updated {$t->type} {$targetName} -> {$targetContent} (Proxied: " . ($t->proxied ? 'Yes' : 'No') . ")";
                                         $appliedCount++;
                                     } else {
-                                        $appliedLog[] = "Skipped (Exists) {$t->type} {$targetName}";
+                                        $appliedLog[] = "Skipped (Matches) {$t->type} {$targetName}";
                                     }
                                     $found = true; break;
                                 }
@@ -675,10 +678,6 @@ function cloudflare_output($vars) {
         <div class="cf-admin-header">
             <h3><i class="fa fa-cogs"></i> Managing Cluster: <?=$infra->name?></h3>
             <div style="display:flex; gap:10px;">
-                <form method="post" action="<?=$modulelink?>&action=mass_sync_infra" onsubmit="return confirm('This will force-update DNS records for ALL domains on this cluster using the current templates. Proceed?')">
-                    <input type="hidden" name="infra_id" value="<?=$id?>">
-                    <button type="submit" class="btn btn-warning btn-sm"><i class="fa fa-refresh"></i> Force Sync All Domains</button>
-                </form>
                 <a href="<?=$modulelink?>&action=infra" class="btn btn-default btn-sm">Back to Overview</a>
             </div>
         </div>
@@ -738,8 +737,12 @@ function cloudflare_output($vars) {
                         <td><input type="text" id="new-content" class="form-control input-sm" placeholder="{ip}"></td>
                         <td><input type="text" id="new-ttl" class="form-control input-sm" value="1"></td>
                         <td><input type="checkbox" id="new-proxied" checked></td>
-                        <td style="text-align:right;">
+                        <td style="text-align:right; display:flex; gap:10px; justify-content: flex-end; align-items: center;">
                             <button type="button" id="btnAddTmpl" class="btn btn-success btn-sm" onclick="addTemplate()"><i class="fa fa-plus"></i> Add Record</button>
+                            <form method="post" action="<?=$modulelink?>&action=mass_sync_infra" onsubmit="return confirm('Force update ALL domains on this cluster to match these templates?')">
+                                <input type="hidden" name="infra_id" value="<?=$id?>">
+                                <button type="submit" class="btn btn-warning btn-sm"><i class="fa fa-refresh"></i> Force Sync All Domains</button>
+                            </form>
                         </td>
                     </tr>
                 </tbody>
@@ -890,7 +893,20 @@ function cloudflare_output($vars) {
                 ->select('tbldomains.id', 'tbldomains.domain', Capsule::raw("'Detached Domain' as product_name"), 'tblclients.firstname', 'tblclients.lastname', 'tbldomains.userid', Capsule::raw("'Direct IP Match' as link_type"))
                 ->get()->toArray();
             
-            $allAssets = array_merge($assets, $detachedAssets);
+            $allAssets = [];
+            $seenDomains = [];
+            
+            foreach ($assets as $a) {
+                $allAssets[] = $a;
+                $seenDomains[] = $a->domain;
+            }
+            
+            foreach ($detachedAssets as $da) {
+                if (!in_array($da->domain, $seenDomains)) {
+                    $allAssets[] = $da;
+                    $seenDomains[] = $da->domain;
+                }
+            }
         ?>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
                 <p class="text-muted" style="margin:0;">These are active hosting services using products linked to this cluster.</p>
@@ -945,10 +961,14 @@ function cloudflare_output($vars) {
             </div>
             <div class="col-md-4">
                 <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
-                    <small class="text-muted">RECENT SYNC ACTIVITY</small>
-                    <h4 style="margin:5px 0;"><?= count($logs) ?> Operations</h4>
+                    <small class="text-muted">GLOBAL ASSETS</small>
+                    <h4 style="margin:5px 0;"><?= Capsule::table('mod_cloudflare_domain_infra')->count() + Capsule::table('mod_cloudflare_product_infra')->count() ?> Tracked</h4>
                 </div>
             </div>
+        </div>
+        
+        <div class="alert alert-info">
+            <i class="fa fa-info-circle"></i> The Sync Hub monitors global infrastructure alignment. Use <b>Force Global Re-Sync</b> to scan all accounts and repair mapping disparities.
         </div>
         
         <h5>Recent Global Sync Events</h5>
