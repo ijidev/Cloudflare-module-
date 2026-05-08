@@ -420,7 +420,7 @@
                 <p style="font-size:12px; color:#15803d; margin:0;"><i class="fa fa-info-circle"></i> Use this for addon domains. We will verify the ownership via WHM API on the selected parent service.</p>
             </div>
             <div id="map-info-none" class="cf-map-info" style="display:none; background:#fff7ed; border:1px solid #fed7aa; padding:15px; border-radius:12px; margin-bottom:20px;">
-                <p style="font-size:12px; color:#9a3412; margin:0;"><i class="fa fa-warning"></i> External domain without hosting. You may be prompted to purchase a plan during sync.</p>
+                <p style="font-size:12px; color:#9a3412; margin:0;"><i class="fa fa-warning"></i> <strong>Hosting Required:</strong> You must purchase a hosting plan from us to utilize our Premium Infrastructure DNS. Standalone assets have limited functionality.</p>
             </div>
 
             <!-- Parent Service Selection (only for addon) -->
@@ -472,8 +472,18 @@ function switchAuth(type) {
 function syncDomain(domain) {
     $('#sync-domain-field').val(domain);
     $('#sync-domain-label').text(domain);
-    // Reset to primary by default
-    setMapType('primary', document.querySelector('.cf-map-tab'));
+    
+    // Auto-detect Primary Hosting
+    $.post('index.php?m=cloudflare', { ajax: 1, op: 'checkPrimary', domain: domain }, function(res) {
+        if (res.found) {
+            $('#map-info-primary').html(`<p style="font-size:12px; color:#0369a1; margin:0;"><i class="fa fa-check-circle"></i> <strong>Detected Hosting:</strong> Linked to your <b>${res.service.name}</b> account. We will align with this cluster.</p>`);
+            setMapType('primary', document.querySelector('.cf-map-tab'));
+        } else {
+            $('#map-info-primary').html(`<p style="font-size:12px; color:#64748b; margin:0;"><i class="fa fa-info-circle"></i> No direct hosting match found for this domain. Please select "Is Addon" if this is a secondary domain.</p>`);
+            setMapType('addon', document.querySelectorAll('.cf-map-tab')[1]);
+        }
+    }, 'json');
+
     $('#syncModal').css('display', 'flex').hide().fadeIn(200);
 }
 function setMapType(type, btn) {
@@ -506,12 +516,12 @@ function handleSyncSubmit(e) {
 
     if (mapType === 'none') {
         Swal.fire({
-            title: 'No Mapping Detected',
-            text: 'This domain will be synced as a standalone asset. Would you like to view our hosting plans to optimize your performance?',
+            title: 'Hosting Plan Required',
+            text: 'To use our Premium Edge Infrastructure, you must have an active hosting plan. Would you like to purchase one now?',
             icon: 'warning',
             showCancelButton: true,
             confirmButtonText: 'Initialize Standalone',
-            cancelButtonText: 'Browse Hosting'
+            cancelButtonText: 'Browse Plans'
         }).then((result) => {
             if (result.isConfirmed) {
                 initiateSync(domain, accId, mapType, parentId);
@@ -526,8 +536,36 @@ function handleSyncSubmit(e) {
 }
 
 function initiateSync(domain, accId, mapType, parentId) {
-    Swal.fire({ title: 'Aligning Infrastructure...', text: 'Verifying mapping and connecting to Cloudflare...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-    window.location.href = `index.php?m=cloudflare&action=manage&domain=${domain}&acc=${accId}&trigger_sync=1&map_type=${mapType}&parent_id=${parentId}`;
+    Swal.fire({ 
+        title: 'Aligning Infrastructure...', 
+        text: 'Verifying mapping and connecting to Cloudflare...', 
+        allowOutsideClick: false, 
+        didOpen: () => { Swal.showLoading(); } 
+    });
+
+    $.post('index.php?m=cloudflare', {
+        ajax: 1,
+        op: 'initSync',
+        domain: domain,
+        acc_id: accId,
+        map_type: mapType,
+        parent_id: parentId
+    }, function(res) {
+        if (res.success) {
+            Swal.fire({
+                title: 'Success!',
+                text: 'Infrastructure aligned and DNS templates applied.',
+                icon: 'success',
+                timer: 2000,
+                showConfirmButton: false
+            });
+            setTimeout(() => { window.location.href = res.redirect; }, 2000);
+        } else {
+            Swal.fire('Alignment Failed', res.message, 'error');
+        }
+    }, 'json').fail(function() {
+        Swal.fire('Error', 'A server-side error occurred during synchronization.', 'error');
+    });
 }
 function showEditAccount(acc) {
     $('#edit-acc-id').val(acc.id);

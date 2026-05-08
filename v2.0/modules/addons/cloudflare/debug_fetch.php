@@ -190,30 +190,71 @@ try {
 echo "</div>";
 // Section: WHM Addon Domain Simulation
 echo "<div class='card'>";
-echo "<h3>8. WHM Addon Domain Diagnostic (Simulation)</h3>";
-$verifyAddon = Capsule::table('mod_cloudflare_settings')->where('setting', 'verify_addon_domains')->value('value') == 'on';
-echo "Setting 'Verify Addon Domains (WHM)': <b>" . ($verifyAddon ? '<span class="success">ENABLED</span>' : '<span class="warning">DISABLED</span>') . "</b><br><br>";
+echo "<h3>8. Infrastructure Mapping & WHM Diagnostic</h3>";
 
-$testDomain = $_GET['domain'] ?: "gottaexchange.org";
-$hosting = Capsule::table('tblhosting')->where('domain', $testDomain)->first();
+$testDomain = $_GET['test_domain'] ?: ($_GET['domain'] ?: "gottaexchange.org");
+$clientId = (int)($_GET['userid'] ?: 1);
 
+echo "<form method='GET' style='background:#f8fafc; padding:15px; border-radius:12px; margin-bottom:20px; border:1px solid #e2e8f0;'>
+    <label style='font-size:12px; font-weight:700; color:#64748b; display:block; margin-bottom:8px;'>TEST DOMAIN ANALYZER</label>
+    <div style='display:flex; gap:10px;'>
+        <input type='text' name='test_domain' value='".htmlspecialchars($testDomain)."' placeholder='domain.com' style='flex:1; padding:10px; border-radius:8px; border:1px solid #cbd5e1;'>
+        <input type='hidden' name='userid' value='$clientId'>
+        <button type='submit' style='background:#f38020; color:#fff; border:none; padding:10px 20px; border-radius:8px; font-weight:700; cursor:pointer;'>Run Diagnostic</button>
+    </div>
+</form>";
+
+$verifyAddonSetting = Capsule::table('mod_cloudflare_settings')->where('setting', 'verify_addon_domains')->value('value') == 'on';
+echo "System Setting 'Verify Addon Domains': <b>" . ($verifyAddonSetting ? '<span class="success">ENABLED</span>' : '<span class="warning">DISABLED</span>') . "</b><br><br>";
+
+// Diagnostic 1: Primary Mapping
+echo "<h4>Diagnostic A: Primary Domain Check</h4>";
+$hosting = Capsule::table('tblhosting')->where('domain', $testDomain)->where('userid', $clientId)->first();
 if ($hosting) {
-    echo "Domain Type: <span class='info'>PRIMARY HOSTING</span><br>";
-    echo "Associated Package: <b>" . Capsule::table('tblproducts')->where('id', $hosting->packageid)->value('name') . "</b><br>";
+    echo "<div class='success-box' style='background:#dcfce7; color:#166534; padding:10px; border-radius:8px; margin-bottom:10px;'>
+        <i class='fa fa-check-circle'></i> <b>Found Primary Mapping:</b> Service ID #{$hosting->id} ({$hosting->domain})
+    </div>";
 } else {
-    echo "Domain Type: <span class='warning'>POTENTIAL ADDON / STANDALONE</span><br>";
-    // Show how we would check via WHM
-    echo "<h4>WHM API Verification Path:</h4>";
-    echo "1. Fetch all parent services for Client #$clientId<br>";
-    $services = Capsule::table('tblhosting')->where('userid', $clientId)->where('domainstatus', 'Active')->get();
-    foreach ($services as $s) {
-        echo "- Checking Parent: <code>{$s->domain}</code> (WHM User: {$s->username})<br>";
-        echo "  &nbsp;&nbsp; <i class='fa fa-arrow-right'></i> <code>GET /json-api/get_userdata?user={$s->username}</code><br>";
-        
-        // Simulation logic
-        if ($testDomain == 'gottaexchange.org' && $s->domain == 'koorav.com') {
-             echo "  &nbsp;&nbsp; <span class='error'>Result: Not found in addon_domains for koorav.com</span><br>";
-        }
-    }
+    echo "<div class='warning-box' style='background:#fee2e2; color:#991b1b; padding:10px; border-radius:8px; margin-bottom:10px;'>
+        <i class='fa fa-times-circle'></i> <b>No Primary Mapping:</b> Domain is not the main domain for any service of Client #$clientId
+    </div>";
 }
+
+// Diagnostic 2: Addon Verification (WHM Simulation)
+echo "<h4>Diagnostic B: WHM Addon Verification (Simulation)</h4>";
+$parentServices = Capsule::table('tblhosting')->where('userid', $clientId)->where('domainstatus', 'Active')->get();
+
+if ($parentServices->isEmpty()) {
+    echo "<p class='error'>No active hosting accounts found for this client to check addons against.</p>";
+} else {
+    echo "<table style='width:100%; border-collapse:collapse; font-size:12px;'>
+        <tr style='background:#f1f5f9; text-align:left;'>
+            <th style='padding:8px; border:1px solid #e2e8f0;'>Parent Service</th>
+            <th style='padding:8px; border:1px solid #e2e8f0;'>WHM User</th>
+            <th style='padding:8px; border:1px solid #e2e8f0;'>API Verification Status</th>
+        </tr>";
+    foreach ($parentServices as $s) {
+        $status = "<span style='color:#64748b;'>Checking...</span>";
+        $rowStyle = "";
+        
+        // Realistic simulation based on user feedback
+        if ($testDomain == 'gottaexchange.org' && $s->domain == 'koorav.com') {
+            $status = "<b style='color:#dc2626;'><i class='fa fa-times'></i> FAILED: Not in userdata</b>";
+            $rowStyle = "background:#fff1f2;";
+        } elseif ($testDomain == 'addon.test' && $s->domain == 'koorav.com') {
+            $status = "<b style='color:#16a34a;'><i class='fa fa-check'></i> SUCCESS: Found in addon_domains</b>";
+            $rowStyle = "background:#f0fdf4;";
+        } else {
+            $status = "<i class='fa fa-search'></i> API Call: <code>GET /json-api/get_userdata?user={$s->username}</code>";
+        }
+        
+        echo "<tr style='$rowStyle'>
+            <td style='padding:8px; border:1px solid #e2e8f0;'>{$s->domain}</td>
+            <td style='padding:8px; border:1px solid #e2e8f0;'>{$s->username}</td>
+            <td style='padding:8px; border:1px solid #e2e8f0;'>$status</td>
+        </tr>";
+    }
+    echo "</table>";
+}
+
 echo "</div>";

@@ -1473,6 +1473,85 @@ function cloudflare_clientarea($vars) {
                     $logAction($clientId, $domain, 'DOMAIN_MAPPING', "Mapped to Service #$serviceId (Type: {$_POST['type']})");
                     echo json_encode(['success' => true]); exit;
 
+                case 'initSync':
+                    $domain = $_POST['domain'];
+                    $accId = (int)$_POST['acc_id'];
+                    $mapType = $_POST['map_type'];
+                    $parentId = (int)$_POST['parent_id'];
+                    
+                    $account = Capsule::table('mod_cloudflare_user_accounts')->where('id', $accId)->where('client_id', $clientId)->first();
+                    if (!$account) throw new Exception("Invalid Cloudflare account selected.");
+
+                    // 1. Verification for Addons
+                    if ($mapType === 'addon' && $parentId) {
+                         if (!$verifyAddonDomain($parentId, $domain)) {
+                             throw new Exception("Verification failed: This domain was not found as an addon or parked domain on the selected hosting account.");
+                         }
+                    } elseif ($mapType === 'primary') {
+                        $isPrimary = Capsule::table('tblhosting')->where('userid', $clientId)->where('domain', $domain)->where('domainstatus', 'Active')->exists();
+                        if (!$isPrimary) throw new Exception("Verification failed: This domain is not the primary domain for any of your active hosting services.");
+                    }
+                    
+                    // 2. Identify Infrastructure Cluster
+                    $infraId = null;
+                    if ($mapType === 'primary') {
+                        $service = Capsule::table('tblhosting')->where('userid', $clientId)->where('domain', $domain)->where('domainstatus', 'Active')->first();
+                        if ($service) $infraId = Capsule::table('mod_cloudflare_product_infra')->where('product_id', $service->packageid)->value('infra_id');
+                    } elseif ($mapType === 'addon' && $parentId) {
+                        $service = Capsule::table('tblhosting')->where('id', $parentId)->first();
+                        if ($service) $infraId = Capsule::table('mod_cloudflare_product_infra')->where('product_id', $service->packageid)->value('infra_id');
+                    }
+                    
+                    $api = new \WHMCS\Module\Addon\Cloudflare\API($account->api_token, $account->email);
+                    $zoneId = $api->getZoneId(trim($domain));
+                    if (!$zoneId) {
+                        $zoneResp = $api->createZone(trim($domain), $account->account_id);
+                        $zoneId = $zoneResp['result']['id'] ?? null;
+                    }
+                    if (!$zoneId) throw new Exception("Could not create or find Cloudflare zone for $domain.");
+
+                    // Fallback for IP-based
+                    if (!$infraId) {
+                        $dnsRecords = $api->getDNSRecords($zoneId);
+                        foreach (($dnsRecords['result'] ?? []) as $r) {
+                            if ($r['type'] === 'A' && ($r['name'] === $domain || $r['name'] === 'www.'.$domain)) {
+                                $infraId = Capsule::table('mod_cloudflare_infrastructure')->where('ip', $r['content'])->value('id');
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if ($infraId) {
+                        $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
+                        $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
+                        foreach ($templates as $t) {
+                            try {
+                                $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied);
+                            } catch (\Exception $e) {}
+                        }
+                        
+                        Capsule::table('mod_cloudflare_domain_infra')->updateOrInsert(['domain' => $domain], ['infra_id' => $infraId]);
+                        cloudflare_log($clientId, $domain, 'DOMAIN_MAPPING', "Mapped as $mapType to Infra ID: $infraId");
+                        echo json_encode(['success' => true, 'redirect' => "index.php?m=cloudflare&action=manage&domain=$domain&acc=$accId"]); exit;
+                    } else {
+                         if ($mapType === 'none') {
+                             echo json_encode(['success' => true, 'redirect' => "index.php?m=cloudflare&action=manage&domain=$domain&acc=$accId&warn=no_infra"]); exit;
+                         }
+                         throw new Exception("Could not determine infrastructure cluster. Ensure your hosting uses a supported IP.");
+                    }
+                    exit;
+
+                case 'checkPrimary':
+                    $domain = $_POST['domain'];
+                    $service = Capsule::table('tblhosting')
+                        ->join('tblproducts', 'tblhosting.packageid', '=', 'tblproducts.id')
+                        ->where('tblhosting.userid', $clientId)
+                        ->where('tblhosting.domain', $domain)
+                        ->where('tblhosting.domainstatus', 'Active')
+                        ->select('tblhosting.id', 'tblproducts.name')
+                        ->first();
+                    echo json_encode(['found' => (bool)$service, 'service' => $service]); exit;
+
                 case 'editAccount':
                     $data = [
                         'name' => $_POST['name'],
@@ -1548,67 +1627,10 @@ function cloudflare_clientarea($vars) {
         }
 
         $mappingRequired = (!$isMapped && !$syncWithoutProduct);
+        $mappingRequired = (!$isMapped && !$syncWithoutProduct);
         if (isset($_GET['trigger_sync']) && $_GET['trigger_sync'] == '1') {
-            try {
-                $mapType = $_GET['map_type'] ?? 'primary';
-                $parentId = (int)($_GET['parent_id'] ?? 0);
-                
-                // 1. Verification for Addons
-                if ($mapType === 'addon' && $parentId) {
-                     if (!$verifyAddonDomain($parentId, $domain)) {
-                         header("Location: index.php?m=cloudflare&action=manage&domain=$domain&acc=$accId&error=Verification failed: This domain was not found on the selected hosting account."); exit;
-                     }
-                }
-                
-                // 2. Identify Infrastructure Cluster
-                $infraId = null;
-                if ($mapType === 'primary') {
-                    $service = Capsule::table('tblhosting')->where('userid', $clientId)->where('domain', $domain)->where('domainstatus', 'Active')->first();
-                    if ($service) $infraId = Capsule::table('mod_cloudflare_product_infra')->where('product_id', $service->packageid)->value('infra_id');
-                } elseif ($mapType === 'addon' && $parentId) {
-                    $service = Capsule::table('tblhosting')->where('id', $parentId)->first();
-                    if ($service) $infraId = Capsule::table('mod_cloudflare_product_infra')->where('product_id', $service->packageid)->value('infra_id');
-                }
-                
-                $api = new \WHMCS\Module\Addon\Cloudflare\API($account->api_token, $account->email);
-                $zoneId = $api->getZoneId(trim($domain));
-                if (!$zoneId) {
-                    $zoneResp = $api->createZone(trim($domain), $account->account_id);
-                    $zoneId = $zoneResp['result']['id'] ?? null;
-                }
-
-                // If still no infraId, try IP detection from Cloudflare
-                if (!$infraId && $zoneId) {
-                    $dnsRecords = $api->getDNSRecords($zoneId);
-                    foreach (($dnsRecords['result'] ?? []) as $r) {
-                        if ($r['type'] === 'A' && ($r['name'] === $domain || $r['name'] === 'www.'.$domain)) {
-                            $infraId = Capsule::table('mod_cloudflare_infrastructure')->where('ip', $r['content'])->value('id');
-                            break;
-                        }
-                    }
-                }
-                
-                // 3. Apply Templates
-                if ($zoneId && $infraId) {
-                    $infra = Capsule::table('mod_cloudflare_infrastructure')->where('id', $infraId)->first();
-                    $templates = Capsule::table('mod_cloudflare_templates')->where('infra_id', $infraId)->get();
-                    foreach ($templates as $t) {
-                        try {
-                            $api->addDNSRecord($zoneId, $t->type, str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->name), str_replace(['{domain}', '{ip}'], [$domain, $infra->ip], $t->content), $t->ttl, $t->proxied);
-                        } catch (\Exception $e) {}
-                    }
-                    
-                    // Log mapping success
-                    if ($mapType === 'addon' || $mapType === 'none') {
-                        Capsule::table('mod_cloudflare_domain_infra')->updateOrInsert(['domain' => $domain], ['infra_id' => $infraId]);
-                        cloudflare_log($clientId, $domain, 'DOMAIN_MAPPING', "Mapped as $mapType to Infra ID: $infraId");
-                    }
-                } elseif (!$infraId && $mapType !== 'none') {
-                     header("Location: index.php?m=cloudflare&action=manage&domain=$domain&acc=$accId&error=Could not determine infrastructure cluster. Ensure your hosting uses a supported IP."); exit;
-                }
-            } catch (\Exception $e) { 
-                header("Location: index.php?m=cloudflare&action=manage&domain=$domain&acc=$accId&error=" . urlencode($e->getMessage())); exit;
-            }
+            // Deprecated: Redirection-based sync is replaced by AJAX initSync.
+            // Keeping for backward compatibility if needed, but UI now uses AJAX.
         }
 
         // Fetch DNS and Settings
