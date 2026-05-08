@@ -53,7 +53,10 @@
         </div>
 
         <div class="cf-tab-nav animate-slide-up">
-            <button class="cf-tab-btn active" onclick="switchTab('accounts', this)">
+            <button class="cf-tab-btn active" onclick="switchTab('overview', this)">
+                <i class="fa fa-th-large"></i> Overview
+            </button>
+            <button class="cf-tab-btn" onclick="switchTab('accounts', this)">
                 <i class="fa fa-key"></i> Managed Accounts
             </button>
             <button class="cf-tab-btn" onclick="switchTab('proxied', this)">
@@ -64,8 +67,118 @@
             </button>
         </div>
 
+        <!-- Tab Content: Overview Index -->
+        <div id="tab-overview" class="cf-tab-content active animate-fade-in">
+            <div class="cf-card-grid">
+                <!-- Card 1: Accounts -->
+                <div class="cf-stat-card cf-card-blue">
+                    <div class="cf-card-header">
+                        <h4>Cloudflare Accounts</h4>
+                        <span class="cf-card-badge">{$userAccounts|@count}</span>
+                    </div>
+                    <div class="cf-card-body">
+                        <p>Link your Cloudflare accounts via API tokens.</p>
+                        <button class="cf-btn-card-link" onclick="switchTab('accounts', document.querySelectorAll('.cf-tab-btn')[1])"><i class="fa fa-plus-circle"></i> Add New Account</button>
+                    </div>
+                </div>
+
+                <!-- Card 2: Proxied -->
+                <div class="cf-stat-card cf-card-green">
+                    <div class="cf-card-header">
+                        <h4>Proxied Domains</h4>
+                        <span class="cf-card-badge">{$proxiedDomains|@count}</span>
+                    </div>
+                    <div class="cf-card-body">
+                        <p>Domains currently managed by our infrastructure.</p>
+                        <button class="cf-btn-card-link" onclick="switchTab('proxied', document.querySelectorAll('.cf-tab-btn')[2])">View All Assets <i class="fa fa-arrow-right"></i></button>
+                    </div>
+                </div>
+
+                <!-- Card 3: Unmanaged -->
+                <div class="cf-stat-card cf-card-orange">
+                    <div class="cf-card-header">
+                        <h4>Unmanaged Domains</h4>
+                        <span class="cf-card-badge">
+                            {assign var="unmanaged" value=0}
+                            {foreach from=$domains item=d}
+                                {assign var="isp" value=false}
+                                {foreach from=$proxiedDomains item=p}{if $p.name == $d.domain}{assign var="isp" value=true}{/if}{/foreach}
+                                {if !$isp}{assign var="unmanaged" value=$unmanaged+1}{/if}
+                            {/foreach}
+                            {$unmanaged}
+                        </span>
+                    </div>
+                    <div class="cf-card-body">
+                        <p>Active WHMCS domains not yet linked to Cloudflare.</p>
+                        <button class="cf-btn-card-link" onclick="switchTab('all', document.querySelectorAll('.cf-tab-btn')[3])">Initialize Sync <i class="fa fa-refresh"></i></button>
+                    </div>
+                </div>
+
+                <!-- Card 4: Plan -->
+                <div class="cf-stat-card cf-card-purple">
+                    <div class="cf-card-header">
+                        <h4>Current Plan</h4>
+                        <span class="cf-card-badge-alt">FREE</span>
+                    </div>
+                    <div class="cf-card-body">
+                        <p>Experience enterprise-grade DNS at zero cost.</p>
+                        <a href="cart.php?gid=addons" class="cf-btn-card-link" style="text-decoration:none;">Upgrade to PRO <i class="fa fa-rocket"></i></a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- How to Use Tips Section -->
+            <div class="cf-tips-section">
+                <div class="cf-tips-header">
+                    <h3><i class="fa fa-lightbulb-o"></i> Getting Started Guide</h3>
+                    <p>Follow these simple steps to secure your domains on the edge.</p>
+                </div>
+                <div class="cf-tips-grid">
+                    <!-- Video Card -->
+                    <div class="cf-tip-card cf-video-card">
+                        <div class="cf-video-placeholder">
+                            <i class="fa fa-play-circle"></i>
+                            <span>Feature Video Tutorial Coming Soon</span>
+                        </div>
+                        <div class="cf-tip-content">
+                            <h5>Video Walkthrough</h5>
+                            <p>Watch how to set up your account and sync your first domain in under 2 minutes.</p>
+                        </div>
+                    </div>
+
+                    <!-- Text Instructions Card -->
+                    <div class="cf-tip-card">
+                        <div class="cf-tip-content">
+                            <h5><i class="fa fa-list-ol"></i> Step-by-Step Configuration</h5>
+                            <div class="cf-step-list">
+                                <div class="cf-step-item">
+                                    <div class="cf-step-circle">1</div>
+                                    <p>Go to <strong>My Profile > API Tokens</strong> on Cloudflare Dashboard.</p>
+                                </div>
+                                <div class="cf-step-item">
+                                    <div class="cf-step-circle">2</div>
+                                    <p>For best security, create an <strong>API Token</strong> using the "Edit Zone DNS" template.</p>
+                                </div>
+                                <div class="cf-step-item">
+                                    <div class="cf-step-circle">3</div>
+                                    <p>For <strong>Full Account Control</strong> (including zone creation), we recommend using your <strong>Global API Key</strong>.</p>
+                                </div>
+                                <div class="cf-step-item">
+                                    <div class="cf-step-circle">4</div>
+                                    <p>Paste your Account ID and Key/Token in the "Managed Accounts" tab.</p>
+                                </div>
+                            </div>
+                            <div class="cf-note-box">
+                                <i class="fa fa-info-circle"></i> <strong>Pro Tip:</strong> Using a Global Key ensures our infrastructure can automatically create and configure DNS zones for you.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Tab Content: Managed Accounts -->
-        <div id="tab-accounts" class="cf-tab-content active animate-fade-in">
+        <div id="tab-accounts" class="cf-tab-content animate-fade-in" style="display:none;">
             <div id="account-list-view">
                 <div class="cf-content-header">
                     <div>
@@ -370,8 +483,51 @@ function handleEditAccount(e) {
 </script>
 
 <style>
-:root { --cf-orange: #f38020; --cf-dark: #0f172a; --cf-gray: #64748b; --cf-border: #e2e8f0; --cf-light: #f8fafc; }
+:root { --cf-orange: #f38020; --cf-dark: #0f172a; --cf-gray: #64748b; --cf-border: #e2e8f0; --cf-light: #f8fafc; --cf-blue: #3b82f6; --cf-green: #10b981; --cf-purple: #8b5cf6; }
 .cf-dashboard-container { font-family: 'Inter', sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; color: var(--cf-dark); }
+
+/* Card Grid Styles */
+.cf-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 40px; }
+.cf-stat-card { background: #fff; border-radius: 16px; padding: 24px; border-top: 3px solid var(--cf-border); box-shadow: 0 4px 15px rgba(0,0,0,0.03); display: flex; flex-direction: column; justify-content: space-between; transition: transform 0.2s; }
+.cf-stat-card:hover { transform: translateY(-3px); }
+.cf-card-blue { border-top-color: var(--cf-blue); }
+.cf-card-green { border-top-color: var(--cf-green); }
+.cf-card-orange { border-top-color: var(--cf-orange); }
+.cf-card-purple { border-top-color: var(--cf-purple); }
+
+.cf-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.cf-card-header h4 { margin: 0; font-size: 13px; font-weight: 700; color: var(--cf-gray); text-transform: uppercase; letter-spacing: 0.5px; }
+.cf-card-badge { background: var(--cf-light); padding: 4px 12px; border-radius: 8px; font-size: 18px; font-weight: 800; color: var(--cf-dark); }
+.cf-card-badge-alt { background: #fef3c7; color: #92400e; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 800; }
+
+.cf-card-body p { font-size: 13px; color: var(--cf-gray); margin: 0 0 20px; line-height: 1.5; }
+.cf-btn-card-link { background: none; border: none; color: var(--cf-blue); font-size: 13px; font-weight: 700; cursor: pointer; padding: 0; display: flex; align-items: center; gap: 6px; }
+.cf-btn-card-link:hover { text-decoration: underline; }
+
+/* Tips Section */
+.cf-tips-header { margin-bottom: 25px; }
+.cf-tips-header h3 { margin: 0 0 5px; font-weight: 800; font-size: 20px; }
+.cf-tips-header p { margin: 0; color: var(--cf-gray); font-size: 14px; }
+.cf-tips-grid { display: grid; grid-template-columns: 1fr 1.5fr; gap: 25px; }
+.cf-tip-card { background: #fff; border-radius: 20px; border: 1px solid var(--cf-border); overflow: hidden; display: flex; flex-direction: column; }
+.cf-video-card { background: var(--cf-dark); color: #fff; }
+.cf-video-placeholder { height: 180px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; background: linear-gradient(135deg, #1e293b, #0f172a); }
+.cf-video-placeholder i { font-size: 40px; color: var(--cf-orange); opacity: 0.8; }
+.cf-video-placeholder span { font-size: 12px; font-weight: 600; color: #94a3b8; }
+.cf-tip-content { padding: 30px; }
+.cf-tip-content h5 { margin: 0 0 15px; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+.cf-tip-content p { font-size: 14px; color: var(--cf-gray); line-height: 1.6; margin: 0; }
+.cf-video-card .cf-tip-content p { color: #94a3b8; }
+
+.cf-step-list { display: flex; flex-direction: column; gap: 15px; margin-bottom: 25px; }
+.cf-step-item { display: flex; gap: 15px; align-items: flex-start; }
+.cf-step-circle { width: 24px; height: 24px; background: var(--cf-light); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; flex-shrink: 0; color: var(--cf-blue); }
+.cf-step-item p { font-size: 13px; margin: 0; }
+.cf-note-box { background: #fff7ed; border-radius: 12px; padding: 15px; border-left: 4px solid var(--cf-orange); font-size: 12px; line-height: 1.5; color: #9a3412; }
+
+@media (max-width: 900px) {
+    .cf-tips-grid { grid-template-columns: 1fr; }
+}
 
 /* Header Fix */
 .cf-dashboard-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; gap: 20px; }
