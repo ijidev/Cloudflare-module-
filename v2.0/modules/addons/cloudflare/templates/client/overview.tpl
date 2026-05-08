@@ -388,32 +388,55 @@
 
 <!-- Sync Domain Modal -->
 <div id="syncModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(15,23,42,0.5); z-index:9999; backdrop-filter:blur(4px); align-items:center; justify-content:center;">
-    <div style="background:#fff; border-radius:16px; padding:24px; width:90%; max-width:450px; box-shadow:0 10px 25px rgba(0,0,0,0.1); margin:auto;">
-        <h3 style="margin:0 0 15px; font-weight:700;">Initialize Infrastructure Sync</h3>
-        <p style="font-size:13px; color:#64748b; margin-bottom:20px;">Connect this domain to your Cloudflare account and apply infrastructure DNS templates.</p>
+    <div style="background:#fff; border-radius:20px; padding:30px; width:95%; max-width:500px; box-shadow:0 15px 35px rgba(0,0,0,0.2); margin:auto;">
+        <h3 style="margin:0 0 10px; font-weight:800; font-size:20px;">Infrastructure Alignment</h3>
+        <p style="font-size:13px; color:#64748b; margin-bottom:25px;">Align <strong><span id="sync-domain-label"></span></strong> with our global infrastructure.</p>
+        
         <form onsubmit="handleSyncSubmit(event)">
             <input type="hidden" id="sync-domain-field">
-            <div class="cf-form-group" style="margin-bottom:15px;">
-                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Target Cloudflare Account</label>
-                <select name="acc" class="cf-input" required>
+            
+            <div class="cf-form-group" style="margin-bottom:20px;">
+                <label style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:8px; text-transform:uppercase; letter-spacing:0.5px;">1. Select Cloudflare Account</label>
+                <select name="acc" class="cf-input" required style="border-width:2px;">
                     {foreach from=$userAccounts|default:[] item=acc}
                         <option value="{$acc->id}">{$acc->name}</option>
                     {/foreach}
                 </select>
             </div>
-            <div class="cf-form-group" style="margin-bottom:20px;">
-                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:5px;">Link to Hosting Service</label>
-                <select name="service_id" class="cf-input" required>
-                    <option value="">-- Select Active Service --</option>
+
+            <label style="display:block; font-size:12px; font-weight:700; color:#475569; margin-bottom:12px; text-transform:uppercase; letter-spacing:0.5px;">2. Hosting Association</label>
+            <div class="cf-mapping-tabs" style="display:flex; background:#f1f5f9; padding:4px; border-radius:12px; margin-bottom:20px;">
+                <div class="cf-map-tab active" onclick="setMapType('primary', this)" style="flex:1; text-align:center; padding:10px; font-size:12px; font-weight:700; cursor:pointer; border-radius:8px;">Primary</div>
+                <div class="cf-map-tab" onclick="setMapType('addon', this)" style="flex:1; text-align:center; padding:10px; font-size:12px; font-weight:700; cursor:pointer; border-radius:8px;">Is Addon</div>
+                <div class="cf-map-tab" onclick="setMapType('none', this)" style="flex:1; text-align:center; padding:10px; font-size:12px; font-weight:700; cursor:pointer; border-radius:8px;">No Mapping</div>
+            </div>
+            <input type="hidden" name="mapping_type" id="mapping_type" value="primary">
+
+            <!-- Info Boxes -->
+            <div id="map-info-primary" class="cf-map-info" style="background:#f0f9ff; border:1px solid #bae6fd; padding:15px; border-radius:12px; margin-bottom:20px;">
+                <p style="font-size:12px; color:#0369a1; margin:0;"><i class="fa fa-info-circle"></i> This domain is the primary domain of your hosting service. We will auto-detect the cluster.</p>
+            </div>
+            <div id="map-info-addon" class="cf-map-info" style="display:none; background:#f0fdf4; border:1px solid #bbf7d0; padding:15px; border-radius:12px; margin-bottom:20px;">
+                <p style="font-size:12px; color:#15803d; margin:0;"><i class="fa fa-info-circle"></i> Use this for addon domains. We will verify the ownership via WHM API on the selected parent service.</p>
+            </div>
+            <div id="map-info-none" class="cf-map-info" style="display:none; background:#fff7ed; border:1px solid #fed7aa; padding:15px; border-radius:12px; margin-bottom:20px;">
+                <p style="font-size:12px; color:#9a3412; margin:0;"><i class="fa fa-warning"></i> External domain without hosting. You may be prompted to purchase a plan during sync.</p>
+            </div>
+
+            <!-- Parent Service Selection (only for addon) -->
+            <div id="parent-service-container" style="display:none; margin-bottom:25px;">
+                <label style="display:block; font-size:12px; font-weight:600; color:#64748b; margin-bottom:8px;">Parent Hosting / Service</label>
+                <select name="parent_service_id" id="parent_service_id" class="cf-input">
+                    <option value="">-- Choose Parent Account --</option>
                     {foreach from=$validServices|default:[] item=s}
                         <option value="{$s.id}">{$s.domain} ({$s.product_name})</option>
                     {/foreach}
                 </select>
-                <p style="font-size:11px; color:#94a3b8; margin-top:5px;"><i class="fa fa-info-circle"></i> This determines which infrastructure cluster to use.</p>
             </div>
-            <div style="display:flex; justify-content:flex-end; gap:10px;">
-                <button type="button" onclick="$('#syncModal').fadeOut()" style="padding:10px 15px; border:1px solid #e2e8f0; background:#fff; border-radius:8px; font-weight:600; cursor:pointer;">Cancel</button>
-                <button type="submit" class="cf-btn-primary">Initialize Sync</button>
+
+            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:10px;">
+                <button type="button" onclick="$('#syncModal').fadeOut()" style="padding:12px 20px; border:1px solid #e2e8f0; background:#fff; border-radius:12px; font-weight:700; cursor:pointer; color:#64748b;">Cancel</button>
+                <button type="submit" class="cf-btn-primary" style="padding:12px 25px; border-radius:12px;">Initialize Process <i class="fa fa-arrow-right"></i></button>
             </div>
         </form>
     </div>
@@ -448,21 +471,63 @@ function switchAuth(type) {
 }
 function syncDomain(domain) {
     $('#sync-domain-field').val(domain);
+    $('#sync-domain-label').text(domain);
+    // Reset to primary by default
+    setMapType('primary', document.querySelector('.cf-map-tab'));
     $('#syncModal').css('display', 'flex').hide().fadeIn(200);
+}
+function setMapType(type, btn) {
+    $('#mapping_type').val(type);
+    $('.cf-map-tab').removeClass('active').css('background', 'transparent').css('color', '#64748b');
+    $(btn).addClass('active').css('background', '#fff').css('color', 'var(--cf-orange)');
+    
+    $('.cf-map-info').hide();
+    $('#map-info-' + type).show();
+    
+    if (type === 'addon') {
+        $('#parent-service-container').show();
+        $('#parent_service_id').prop('required', true);
+    } else {
+        $('#parent-service-container').hide();
+        $('#parent_service_id').prop('required', false);
+    }
 }
 function handleSyncSubmit(e) {
     e.preventDefault();
     const domain = $('#sync-domain-field').val();
     const accId = $(e.target).find('select[name="acc"]').val();
-    const serviceId = $(e.target).find('select[name="service_id"]').val();
+    const mapType = $('#mapping_type').val();
+    const parentId = $('#parent_service_id').val();
     
-    if (!serviceId) {
-        Swal.fire('Error', 'Please select a target hosting service.', 'error');
+    if (mapType === 'addon' && !parentId) {
+        Swal.fire('Error', 'Please select a parent hosting account for the addon domain.', 'error');
+        return;
+    }
+
+    if (mapType === 'none') {
+        Swal.fire({
+            title: 'No Mapping Detected',
+            text: 'This domain will be synced as a standalone asset. Would you like to view our hosting plans to optimize your performance?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Initialize Standalone',
+            cancelButtonText: 'Browse Hosting'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                initiateSync(domain, accId, mapType, parentId);
+            } else if (result.dismiss === Swal.DismissReason.cancel) {
+                window.location.href = 'cart.php?gid=1';
+            }
+        });
         return;
     }
     
-    Swal.fire({ title: 'Initializing Sync...', text: 'Connecting to Cloudflare...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
-    window.location.href = `index.php?m=cloudflare&action=manage&domain=${domain}&acc=${accId}&trigger_sync=1&service_id=${serviceId}`;
+    initiateSync(domain, accId, mapType, parentId);
+}
+
+function initiateSync(domain, accId, mapType, parentId) {
+    Swal.fire({ title: 'Aligning Infrastructure...', text: 'Verifying mapping and connecting to Cloudflare...', allowOutsideClick: false, didOpen: () => { Swal.showLoading(); } });
+    window.location.href = `index.php?m=cloudflare&action=manage&domain=${domain}&acc=${accId}&trigger_sync=1&map_type=${mapType}&parent_id=${parentId}`;
 }
 function showEditAccount(acc) {
     $('#edit-acc-id').val(acc.id);

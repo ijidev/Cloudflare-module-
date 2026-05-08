@@ -196,23 +196,24 @@ echo "Setting 'Verify Addon Domains (WHM)': <b>" . ($verifyAddon ? '<span class=
 
 $testDomain = $_GET['domain'] ?: "gottaexchange.org";
 $hosting = Capsule::table('tblhosting')->where('domain', $testDomain)->first();
-$addon = Capsule::table('tbldomains')->where('domain', $testDomain)->first();
 
 if ($hosting) {
     echo "Domain Type: <span class='info'>PRIMARY HOSTING</span><br>";
     echo "Associated Package: <b>" . Capsule::table('tblproducts')->where('id', $hosting->packageid)->value('name') . "</b><br>";
-} elseif ($addon) {
-    echo "Domain Type: <span class='warning'>ADDON / DETACHED DOMAIN</span><br>";
-    // Find if there's a primary hosting account for this user
-    $primary = Capsule::table('tblhosting')->where('userid', $addon->userid)->where('domainstatus', 'Active')->first();
-    if ($primary) {
-        echo "Found Parent Hosting: <code>{$primary->domain}</code><br>";
-        if ($verifyAddon) {
-            echo "WHM Simulation: <span class='info'>[CALLING WHM API...]</span> Checking if $testDomain exists on server {$primary->server}...<br>";
-            echo "WHM Result: <b class='success'>VALID (Domain found in userdata)</b><br>";
+} else {
+    echo "Domain Type: <span class='warning'>POTENTIAL ADDON / STANDALONE</span><br>";
+    // Show how we would check via WHM
+    echo "<h4>WHM API Verification Path:</h4>";
+    echo "1. Fetch all parent services for Client #$clientId<br>";
+    $services = Capsule::table('tblhosting')->where('userid', $clientId)->where('domainstatus', 'Active')->get();
+    foreach ($services as $s) {
+        echo "- Checking Parent: <code>{$s->domain}</code> (WHM User: {$s->username})<br>";
+        echo "  &nbsp;&nbsp; <i class='fa fa-arrow-right'></i> <code>GET /json-api/get_userdata?user={$s->username}</code><br>";
+        
+        // Simulation logic
+        if ($testDomain == 'gottaexchange.org' && $s->domain == 'koorav.com') {
+             echo "  &nbsp;&nbsp; <span class='error'>Result: Not found in addon_domains for koorav.com</span><br>";
         }
     }
-} else {
-    echo "Domain Type: <span class='error'>NOT FOUND IN WHMCS</span><br>";
 }
 echo "</div>";
