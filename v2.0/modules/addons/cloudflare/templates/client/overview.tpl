@@ -102,7 +102,7 @@
                             {assign var="unmanaged" value=0}
                             {foreach from=$domains item=d}
                                 {assign var="isp" value=false}
-                                {foreach from=$proxiedDomains item=p}{if $p.name == $d.domain}{assign var="isp" value=true}{/if}{/foreach}
+                                {foreach from=$proxiedDomains item=p}{if $p.name == $d->domain}{assign var="isp" value=true}{/if}{/foreach}
                                 {if !$isp}{assign var="unmanaged" value=$unmanaged+1}{/if}
                             {/foreach}
                             {$unmanaged}
@@ -137,8 +137,12 @@
                     <!-- Video Card -->
                     <div class="cf-tip-card cf-video-card">
                         <div class="cf-video-placeholder">
-                            <i class="fa fa-play-circle"></i>
-                            <span>Feature Video Tutorial Coming Soon</span>
+                            {if $videoUrl}
+                                <iframe width="100%" height="100%" src="{$videoUrl}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                            {else}
+                                <i class="fa fa-play-circle"></i>
+                                <span>Feature Video Tutorial Coming Soon</span>
+                            {/if}
                         </div>
                         <div class="cf-tip-content">
                             <h5>Video Walkthrough</h5>

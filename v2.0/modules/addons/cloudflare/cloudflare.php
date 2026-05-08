@@ -292,12 +292,16 @@ function cloudflare_output($vars) {
             }
             if ($isMatch) {
                 if ($isProductLink) {
-                    if (!$existingProductLink) {
-                        Capsule::table('mod_cloudflare_product_infra')->updateOrInsert(['product_id' => $data['id']], ['infra_id' => $infraId]);
-                        $repaired++;
-                    }
+                    // Priority: If linked to a product, ensure any "detached" domain link is removed
+                    Capsule::table('mod_cloudflare_domain_infra')->where('domain', $domain)->delete();
+                    Capsule::table('mod_cloudflare_product_infra')->updateOrInsert(['product_id' => $data['id']], ['infra_id' => $infraId]);
+                    $repaired++;
                 } else {
-                    if (!$existingDomainLink) {
+                    // Only insert detached link if NO product link exists for ANY domain using this product
+                    $productLinked = Capsule::table('tblhosting')->where('domain', $domain)->where('domainstatus', 'Active')->first();
+                    if ($productLinked && Capsule::table('mod_cloudflare_product_infra')->where('product_id', $productLinked->packageid)->exists()) {
+                        // Already covered by product link, skip detached insert
+                    } else {
                         Capsule::table('mod_cloudflare_domain_infra')->updateOrInsert(['domain' => $domain], ['infra_id' => $infraId]);
                         $repaired++;
                         cloudflare_log($data['user'], $domain, 'AUTO_MAP', "Detached domain '{$domain}' matched to cluster IP. Linked successfully.");
@@ -981,8 +985,26 @@ function cloudflare_output($vars) {
     </div>
 <?php elseif ($action == 'sync'): 
     $syncSettings = Capsule::table('mod_cloudflare_settings')->where('setting', 'sync_without_product')->value('value') == 'on';
-    $logs = Capsule::table('mod_cloudflare_logs')->where('action', 'SYNC_DNS')->orderBy('id', 'desc')->limit(50)->get();
+    $logs = Capsule::table('mod_cloudflare_logs')->where('action', 'SYNC_DNS')->orderBy('id', 'desc')->limit(20)->get();
     $infra = Capsule::table('mod_cloudflare_infrastructure')->get();
+    
+    // Fetch all active global assets
+    $productAssets = Capsule::table('tblhosting')
+        ->join('mod_cloudflare_product_infra', 'tblhosting.packageid', '=', 'mod_cloudflare_product_infra.product_id')
+        ->join('mod_cloudflare_infrastructure', 'mod_cloudflare_product_infra.infra_id', '=', 'mod_cloudflare_infrastructure.id')
+        ->join('tblclients', 'tblhosting.userid', '=', 'tblclients.id')
+        ->where('tblhosting.domainstatus', 'Active')
+        ->select('tblhosting.domain', 'tblclients.firstname', 'tblclients.lastname', 'tblclients.id as userid', 'mod_cloudflare_infrastructure.name as cluster_name', Capsule::raw("'Product Mapping' as link_type"))
+        ->get()->toArray();
+        
+    $domainAssets = Capsule::table('mod_cloudflare_domain_infra')
+        ->join('tbldomains', 'mod_cloudflare_domain_infra.domain', '=', 'tbldomains.domain')
+        ->join('mod_cloudflare_infrastructure', 'mod_cloudflare_domain_infra.infra_id', '=', 'mod_cloudflare_infrastructure.id')
+        ->join('tblclients', 'tbldomains.userid', '=', 'tblclients.id')
+        ->select('tbldomains.domain', 'tblclients.firstname', 'tblclients.lastname', 'tblclients.id as userid', 'mod_cloudflare_infrastructure.name as cluster_name', Capsule::raw("'Direct IP Match' as link_type"))
+        ->get()->toArray();
+        
+    $allGlobalAssets = array_merge($productAssets, $domainAssets);
 ?>
     <div class="cf-admin-card">
         <div class="cf-admin-header">
@@ -1015,7 +1037,7 @@ function cloudflare_output($vars) {
         </div>
         
         <h5>Recent Global Sync Events</h5>
-        <table class="cf-table-admin">
+        <table class="cf-table-admin" style="margin-bottom: 30px;">
             <thead><tr><th>Time</th><th>Domain</th><th>Cluster Match</th><th>Status</th></tr></thead>
             <tbody>
                 <?php foreach ($logs as $l): ?>
@@ -1027,6 +1049,23 @@ function cloudflare_output($vars) {
                     </tr>
                 <?php endforeach; if(count($logs)==0): ?>
                     <tr><td colspan="4" class="text-center" style="padding:20px;">No recent sync activity logged.</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+
+        <h5>Active Infrastructure Assets</h5>
+        <table class="cf-table-admin">
+            <thead><tr><th>Domain Name</th><th>Owner</th><th>Cluster</th><th>Link Type</th></tr></thead>
+            <tbody>
+                <?php foreach ($allGlobalAssets as $ga): ?>
+                    <tr>
+                        <td><strong><?= $ga->domain ?></strong></td>
+                        <td><a href="clientssummary.php?userid=<?= $ga->userid ?>"><?= $ga->firstname ?> <?= $ga->lastname ?></a></td>
+                        <td><span class="label label-info"><?= $ga->cluster_name ?></span></td>
+                        <td><small class="text-muted"><?= $ga->link_type ?></small></td>
+                    </tr>
+                <?php endforeach; if(count($allGlobalAssets)==0): ?>
+                    <tr><td colspan="4" class="text-center" style="padding:20px;">No global assets currently mapped.</td></tr>
                 <?php endif; ?>
             </tbody>
         </table>
@@ -1116,6 +1155,15 @@ function cloudflare_output($vars) {
                             <label>IP Retention History Count</label>
                             <input type="number" name="settings[ip_retention_count]" value="<?=$settings['ip_retention_count']?>" class="form-control">
                             <p class="help-block">How many old IPs to track for migration.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="form-group">
+                            <label>Client Walkthrough Video URL (YouTube/Vimeo Embed)</label>
+                            <input type="text" name="settings[video_url]" value="<?=htmlspecialchars($settings['video_url'])?>" class="form-control" placeholder="https://www.youtube.com/embed/XXXXX">
+                            <p class="help-block">This video will appear in the client area overview dashboard.</p>
                         </div>
                     </div>
                 </div>
@@ -1534,9 +1582,10 @@ function cloudflare_clientarea($vars) {
             'userAccounts' => $userAccounts ?: [],
             'proxiedDomains' => $proxiedDomains ?: [],
             'domains' => $whmcsDomains ? $whmcsDomains->toArray() : [],
-                        'validServices' => $validServices ?: [],
+            'validServices' => $validServices ?: [],
             'companyname' => $GLOBALS['companyname'],
-            'clientId' => $clientId
+            'clientId' => $clientId,
+            'videoUrl' => Capsule::table('mod_cloudflare_settings')->where('setting', 'video_url')->value('value')
         ]
     ];
 }

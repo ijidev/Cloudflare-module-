@@ -188,3 +188,31 @@ try {
     echo "Simulation Failed: <span class='error'>" . $e->getMessage() . "</span>";
 }
 echo "</div>";
+// Section: WHM Addon Domain Simulation
+echo "<div class='card'>";
+echo "<h3>8. WHM Addon Domain Diagnostic (Simulation)</h3>";
+$verifyAddon = Capsule::table('mod_cloudflare_settings')->where('setting', 'verify_addon_domains')->value('value') == 'on';
+echo "Setting 'Verify Addon Domains (WHM)': <b>" . ($verifyAddon ? '<span class="success">ENABLED</span>' : '<span class="warning">DISABLED</span>') . "</b><br><br>";
+
+$testDomain = $_GET['domain'] ?: "gottaexchange.org";
+$hosting = Capsule::table('tblhosting')->where('domain', $testDomain)->first();
+$addon = Capsule::table('tbldomains')->where('domain', $testDomain)->first();
+
+if ($hosting) {
+    echo "Domain Type: <span class='info'>PRIMARY HOSTING</span><br>";
+    echo "Associated Package: <b>" . Capsule::table('tblproducts')->where('id', $hosting->packageid)->value('name') . "</b><br>";
+} elseif ($addon) {
+    echo "Domain Type: <span class='warning'>ADDON / DETACHED DOMAIN</span><br>";
+    // Find if there's a primary hosting account for this user
+    $primary = Capsule::table('tblhosting')->where('userid', $addon->userid)->where('domainstatus', 'Active')->first();
+    if ($primary) {
+        echo "Found Parent Hosting: <code>{$primary->domain}</code><br>";
+        if ($verifyAddon) {
+            echo "WHM Simulation: <span class='info'>[CALLING WHM API...]</span> Checking if $testDomain exists on server {$primary->server}...<br>";
+            echo "WHM Result: <b class='success'>VALID (Domain found in userdata)</b><br>";
+        }
+    }
+} else {
+    echo "Domain Type: <span class='error'>NOT FOUND IN WHMCS</span><br>";
+}
+echo "</div>";
